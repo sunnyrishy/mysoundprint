@@ -117,13 +117,9 @@ def test_everyday_clips_raise_no_classifier_alert() -> None:
     assert len(wrong) <= max(1, len(found) // 10), f"classifier events on negative clips: {wrong}"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="KNOWN ISSUE found on real clips (docs/DECISIONS.md D58): the tonal gate raises a "
-    "provisional BACKUP ALARM on tonal everyday sounds such as a crying baby, a vacuum cleaner "
-    "or laughing. Not fixed in Milestone A.",
-)
-def test_known_issue_gate_does_not_flash_backup_alarm_on_tonal_everyday_sounds() -> None:
+def test_gate_does_not_flash_backup_alarm_on_tonal_everyday_sounds() -> None:
+    """Regression for D58, fixed by classifier confirmation (D60). The tonal gate used to flash a
+    provisional BACKUP ALARM on a crying baby, a vacuum cleaner and laughter."""
     found = need(TONAL_EVERYDAY)
     flashed = [
         p.name for p in found if any(a.line1 == "BACKUP ALARM" for a in run_clip(p, "home")[0])

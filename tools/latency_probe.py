@@ -143,6 +143,9 @@ def main(argv: list[str] | None = None) -> int:
     runtime = None
     try:
         cfg: SentinelConfig = load_config(args.config)
+        # The probe is a synthetic tone used to time the display path. A classifier cannot confirm
+        # it, so the gate must be allowed to alert on its own here. Not a recognition test.
+        cfg.gate.confirm_with_classifier = False
         runtime = start_runtime(
             cfg, "live" if args.mode == "live" else "replay", args.display, args.db
         )

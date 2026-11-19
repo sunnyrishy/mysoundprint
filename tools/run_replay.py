@@ -112,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
             serve=args.serve, use_dashboard=not args.no_dashboard, lan=args.lan,
         )  # fmt: skip
         stage = None if args.no_classifier else build_classifier_stage(cfg.classifier)
+        if stage is None and cfg.gate.confirm_with_classifier:
+            print("Gate only: no classifier, so backup alarm alerts are UNVERIFIED.")
     except (ConfigError, RuntimeError, NotImplementedError) as err:
         print(err, file=sys.stderr)
         if runtime:

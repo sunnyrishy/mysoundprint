@@ -70,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
             cfg, "live", display_name, args.db, use_dashboard=not args.no_dashboard, lan=args.lan
         )
         stage = None if args.no_classifier else build_classifier_stage(cfg.classifier)
+        if stage is None and cfg.gate.confirm_with_classifier:
+            print("Gate only: no classifier, so backup alarm alerts are UNVERIFIED.")
         metrics = Metrics()
         source = make_audio_source(
             cfg, args.input, parse_device(args.device) if args.device else None, metrics

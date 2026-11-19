@@ -151,10 +151,16 @@ def main(argv: list[str] | None = None) -> int:
                 replay_note = "NOT LIVE: the microphone could not be opened, so this is a replay."
         if mode == "replay":
             audio, desc, label = load_replay_audio(args.input)
+            if label == "synthetic":
+                # A classifier cannot confirm a synthetic tone, so a synthetic replay runs the gate
+                # on its own. It is labeled synthetic and RECORDING on the page and in the log.
+                cfg.gate.confirm_with_classifier = False
             source = LoopingSource(audio, cfg.audio.frame_ms)
             replay_note = (
                 replay_note or "RECORDING: replaying audio. This is not the live microphone."
             )
+            if label == "synthetic":
+                replay_note += " Synthetic tones: gate hits are NOT confirmed by the classifier."
         else:
             desc = "live microphone"
 

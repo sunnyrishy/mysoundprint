@@ -33,6 +33,15 @@
   button:disabled { opacity:.45; }
   .row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
   .row:last-child { border-bottom:0; }
+  .pill { font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; border:1px solid var(--accent); color:var(--accent); white-space:nowrap; }
+  .pill.sim { border-color:var(--warn); color:var(--warn); }
+  .sim-box { border:1px dashed var(--warn); border-radius:12px; padding:10px 12px; margin:10px 0 6px; }
+  .sim-box h3 { margin:0 0 4px; font-size:13px; color:var(--warn); }
+  .sim-box p { margin:0 0 8px; font-size:12.5px; color:var(--muted); }
+  .sim-btns { display:flex; flex-wrap:wrap; gap:8px; }
+  .sim-btns button { min-height:44px; padding:8px 12px; border-style:dashed; }
+  .sim-banner { background:rgba(255,184,77,.12); border:1px solid var(--warn); border-radius:12px; padding:10px 12px; margin-bottom:8px; font-size:13.5px; }
+  .sim-banner button { margin-top:8px; min-height:40px; padding:6px 12px; }
   .chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px; }
   .chip { min-height:44px; padding:8px 16px; border-radius:999px; }
   .chip.active { background:var(--accent); color:#04210f; border-color:var(--accent); font-weight:700; }
@@ -58,6 +67,7 @@
 <div class="wrap">
   <header>
     <h1>Sentinel</h1>
+    <span id="profilePill" class="pill" title="Active profile">Profile: ...</span>
     <span id="source" class="badge">LIVE</span>
     <span id="conn" class="dot" title="connection"></span>
   </header>
@@ -72,7 +82,13 @@
 
   <div class="card" style="margin-top:12px;">
     <h2>For you</h2>
+    <div id="ctxBanner" class="sim-banner" hidden></div>
     <div id="profiles" class="chips"></div>
+    <div class="sim-box">
+      <h3>Simulated context (demo only)</h3>
+      <p>These buttons only pretend. Nothing here detects where you are or what time it is.</p>
+      <div id="triggers" class="sim-btns"></div>
+    </div>
     <div id="sounds"></div>
     <div style="padding-top:12px;">
       <div class="row" style="border:0;padding-bottom:0;"><span>Sensitivity</span><span id="sensVal" class="muted">1.0</span></div>
@@ -156,7 +172,36 @@
     if (!r.ok) throw new Error(data.detail || r.status);
     return data;
   }
+  function renderContext() {
+    const prof = activeProfile(), ctx = snap.context || { simulated: false };
+    const pill = $("profilePill");
+    pill.textContent = "Profile: " + prof.label + (ctx.simulated ? " (simulated)" : "");
+    pill.className = "pill" + (ctx.simulated ? " sim" : "");
+    const banner = $("ctxBanner"); banner.replaceChildren();
+    banner.hidden = !ctx.simulated;
+    if (ctx.simulated) {
+      const t = document.createElement("div");
+      t.textContent = "Simulated context: " + ctx.trigger_label + ". The profile was set by a demo button, not by real detection.";
+      const b = document.createElement("button"); b.textContent = "Back to manual";
+      b.addEventListener("click", async () => {
+        try { snap = await postJSON("/api/context/manual", {}); renderProfiles(); $("msg").textContent = "Back to manual. Profile: " + activeProfile().label + "."; }
+        catch (e) { $("msg").textContent = "Could not switch: " + e.message; }
+      });
+      banner.append(t, b);
+    }
+    const box = $("triggers"); box.replaceChildren();
+    for (const tr of snap.triggers || []) {
+      const b = document.createElement("button");
+      b.textContent = "Simulate: " + tr.label + " (" + tr.profile_label + ")";
+      b.addEventListener("click", async () => {
+        try { snap = await postJSON("/api/context/simulate", { trigger: tr.id }); renderProfiles(); $("msg").textContent = "Simulated: " + tr.label + ". Profile is now " + activeProfile().label + "."; }
+        catch (e) { $("msg").textContent = "Could not simulate: " + e.message; }
+      });
+      box.append(b);
+    }
+  }
   function renderProfiles() {
+    renderContext();
     const chips = $("profiles"); chips.replaceChildren();
     for (const p of snap.profiles) {
       const b = document.createElement("button"); b.className = "chip" + (p.id === snap.active ? " active" : "");

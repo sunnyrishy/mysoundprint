@@ -29,6 +29,16 @@ class Metrics:
         self._samples: list[LatencySample] = []
         self.dropped_frames = 0
         self.display_timeouts = 0
+        # Gate candidates: how many appeared and how each one ended (see Pipeline).
+        self.gate_candidates = 0
+        self.gate_confirmed = 0
+        self.gate_suppressed = 0
+        self.gate_unconfirmed = 0
+
+    def count_gate(self, outcome: str) -> None:
+        """outcome is candidates, confirmed, suppressed (contradicted) or unconfirmed (expired)."""
+        with self._lock:
+            setattr(self, f"gate_{outcome}", getattr(self, f"gate_{outcome}") + 1)
 
     def record_latency(
         self, event_id: str, t_onset: float, t_detect: float, t_display: float
@@ -64,6 +74,10 @@ class Metrics:
             "alarm_to_display_p95_ms": percentile(a2d, 95),
             "dropped_frames": self.dropped_frames,
             "display_timeouts": self.display_timeouts,
+            "gate_candidates": self.gate_candidates,
+            "gate_confirmed": self.gate_confirmed,
+            "gate_suppressed": self.gate_suppressed,
+            "gate_unconfirmed": self.gate_unconfirmed,
         }
 
 

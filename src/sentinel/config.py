@@ -66,6 +66,10 @@ class GateConfig(_Strict):
     burst_max_s: float = Field(1.0, gt=0)
     pulse_period_s: tuple[float, float] = (0.6, 1.5)
     confirm_timeout_s: float = Field(1.6, gt=0)
+    # A gate hit is only a candidate. It may show BACKUP ALARM only after the classifier gives
+    # positive evidence for reversing beeps and does not contradict it. Gate-only runs (no
+    # classifier) keep the old behavior, because there is nothing to confirm with. See D60.
+    confirm_with_classifier: bool = True
 
     @model_validator(mode="after")
     def _check_ranges(self) -> GateConfig:
@@ -186,9 +190,27 @@ class ProfileDef(_Strict):
         return v
 
 
+class TriggerDef(_Strict):
+    """A SIMULATED context trigger: tapping it on the phone page switches to a profile. It does
+    not detect a place, a movement or the time of day. It exists to demonstrate the flow."""
+
+    label: str = Field(min_length=1, max_length=40)
+    profile: str
+
+
+def _default_triggers() -> dict[str, TriggerDef]:
+    return {
+        "leave_home": TriggerDef(label="Leaving home", profile="commute"),
+        "arrive_home": TriggerDef(label="Arriving home", profile="home"),
+        "start_focus": TriggerDef(label="Starting focus time", profile="focus"),
+        "go_to_sleep": TriggerDef(label="Going to sleep", profile="sleep"),
+    }
+
+
 class ProfilesConfig(_Strict):
     active: str = "home"
     definitions: dict[str, ProfileDef] = Field(default_factory=_default_profile_definitions)
+    triggers: dict[str, TriggerDef] = Field(default_factory=_default_triggers)
 
     @model_validator(mode="after")
     def _check(self) -> ProfilesConfig:
@@ -202,6 +224,12 @@ class ProfilesConfig(_Strict):
                 f"profiles.active '{self.active}' is not defined. Choose from "
                 f"{sorted(self.definitions)}"
             )
+        for tid, trig in self.triggers.items():
+            if trig.profile not in self.definitions:
+                raise ValueError(
+                    f"profiles.triggers.{tid} points at unknown profile '{trig.profile}'. "
+                    f"Choose from {sorted(self.definitions)}"
+                )
         return self
 
 

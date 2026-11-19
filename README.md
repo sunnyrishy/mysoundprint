@@ -141,7 +141,7 @@ This repository started as a project called **Sentinel**, a sound to sight alert
 
 ### Not built yet
 
-The context switch (the manual profile switch exists, the labeled simulated trigger does not), Sound DNA, feedback adaptation, the history view (the `later` events are saved and `GET /api/events?level=later` returns them, but the phone has no screen for them yet), the privacy screen.
+Sound DNA, feedback adaptation, the history view (the `later` events are saved and `GET /api/events?level=later` returns them, but the phone has no screen for them yet), the privacy screen.
 
 ### Blocked on the SDK
 
@@ -151,7 +151,8 @@ The real glasses display adapter and the glasses microphone adapter. Both exist 
 
 - Verified on synthetic audio: gate behavior (including harmonics, clipping, reverb, pitch drift, band edges), policy rules, event log, dashboard, bridge, evaluation tooling, a full real-time run with the classifier at about 3 percent of one CPU core.
 - Verified on real audio, development only: a smell test on 46 clips from the ESC-50 dataset (4 per category, not committed, not a measurement). The classifier path looked reasonable, for example knock 4 of 4 and siren 4 of 4 clips detected, with no classifier events on clapping, footsteps, typing or washing machine. Doorbell is untested because ESC-50 has no doorbell class.
-- **Open finding:** on those same real clips the tonal gate flashes a provisional `BACKUP ALARM` on tonal everyday sounds (crying baby, vacuum cleaner, laughing). Most are cancelled after 1.6 s, but they show on the lens first. With the default Home profile that is a real false alert risk. It is not fixed yet. See D58 in `docs/DECISIONS.md` for the options.
+- **Gate false alerts (fixed, D60):** a tonal gate hit is only a candidate and needs the classifier to confirm reversing beeps. On real dev clips BACKUP ALARM shown fell from 21 to 0 (46 clips). Real reversing alarm recall under confirmation is not measured and needs real recordings.
+- **Context switch:** manual profile switch plus a labeled SIMULATED trigger (Home to Commute and others), see D61. No location or time detection.
 - Not verified: the live microphone path on real hardware, recognition of real alarms, doorbells, sirens, anything on the glasses.
 - Software latency on a synthetic backup alarm is about 0.3 s from sound onset to the display call returning. This is not a glasses number.
 

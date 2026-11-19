@@ -162,6 +162,25 @@ def create_app(
         hub.publish({"type": "profile", **view})
         return profile.snapshot()
 
+    @app.post("/api/context/simulate")
+    def simulate_context(body: Annotated[dict[str, Any], Body()]) -> dict[str, Any]:
+        """A SIMULATED context trigger (demo only). Nothing detects a place or the time."""
+        if profile is None:
+            raise HTTPException(status_code=503, detail="profile is not enabled")
+        try:
+            view = profile.simulate(str(body.get("trigger", "")))
+        except ProfileError as err:
+            raise HTTPException(status_code=422, detail=str(err)) from err
+        hub.publish({"type": "profile", **view})
+        return profile.snapshot()
+
+    @app.post("/api/context/manual")
+    def back_to_manual() -> dict[str, Any]:
+        if profile is None:
+            raise HTTPException(status_code=503, detail="profile is not enabled")
+        hub.publish({"type": "profile", **profile.return_to_manual()})
+        return profile.snapshot()
+
     @app.post("/api/profiles/{name}")
     def edit_profile(name: str, body: Annotated[dict[str, Any], Body()]) -> dict[str, Any]:
         if profile is None:

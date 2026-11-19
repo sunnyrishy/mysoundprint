@@ -10,6 +10,7 @@ import difflib
 import time
 from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -79,6 +80,20 @@ def _make_interpreter(model_path: Path, num_threads: int) -> Any:
                     "No TFLite runtime found. Install one: pip install ai-edge-litert"
                 ) from err
     return Interpreter(model_path=str(model_path), num_threads=num_threads)
+
+
+@dataclass(frozen=True)
+class ClassifierObservation:
+    """What the classifier thought of the audio window that just ended. The pipeline uses it to
+    decide whether a tonal gate hit is contradicted. It is not an alert."""
+
+    t_window_end: float
+    t_now: float
+    top_index: int  # the best class over all 521 scores
+    top_score: float
+    top_name: str | None
+    reversing_score: float  # the catalog reversing_alarm score for this window
+    contradicts_reversing: bool
 
 
 class Classifier(Protocol):
@@ -157,6 +172,7 @@ class ClassifierStage:
             c: deque(maxlen=cfg.smoothing.windows) for c in self._thresholds
         }
         self.profile = None  # optional ProfileStore: sensitivity scales every threshold
+        self.last_observation: ClassifierObservation | None = None
         self._seen = 0  # samples seen by this stage, i.e. position in the stream
         self._last_total = 0
         self.last_scores: dict[AlertClass, float] = {}
@@ -178,20 +194,59 @@ class ClassifierStage:
             return []
         self._last_total = self._seen
         window = ring.window(self._seen, self.clf.window_len)
-        scores = class_scores(self.clf.infer(window), self.clf.class_indices)
-        return self.update(scores, frame.t_end, clock())
+        raw = self.clf.infer(window)
+        scores = class_scores(raw, self.clf.class_indices)
+        obs = self._observe(raw, scores, frame.t_end, clock())
+        self.last_observation = obs
+        return self.update(scores, frame.t_end, obs.t_now, obs.contradicts_reversing)
+
+    def take_observation(self) -> ClassifierObservation | None:
+        """The observation from the last step, once. Call it on the thread that called step."""
+        obs, self.last_observation = self.last_observation, None
+        return obs
+
+    def _sensitivity(self) -> float:
+        return self.profile.sensitivity if self.profile is not None else 1.0
+
+    def _observe(
+        self, raw: np.ndarray, scores: dict[AlertClass, float], t_window_end: float, t_now: float
+    ) -> ClassifierObservation:
+        """Contradiction: the best class over all 521 is not reversing beeps, it scores above the
+        reversing score, and it is at least as confident as the reversing threshold. No new class
+        mapping and no new threshold: it only reuses the catalog entry for reversing_alarm."""
+        rev_idx = self.clf.class_indices.get(AlertClass.REVERSING_ALARM)
+        top = int(np.argmax(raw))
+        top_score = float(raw[top])
+        rev_score = scores.get(AlertClass.REVERSING_ALARM, 0.0)
+        names = getattr(self.clf, "class_names", None)
+        contradicts = False
+        if rev_idx:
+            threshold = min(1.0, self._thresholds[AlertClass.REVERSING_ALARM] / self._sensitivity())
+            contradicts = top not in rev_idx and top_score > rev_score and top_score >= threshold
+        return ClassifierObservation(
+            t_window_end, t_now, top, top_score, names[top] if names else None, rev_score,
+            contradicts,
+        )  # fmt: skip
 
     def update(
-        self, scores: dict[AlertClass, float], t_window_end: float, t_now: float
+        self,
+        scores: dict[AlertClass, float],
+        t_window_end: float,
+        t_now: float,
+        contradicts_reversing: bool = False,
     ) -> list[Detection]:
-        """Apply thresholds and hits-of-windows smoothing to one inference result."""
+        """Apply thresholds and hits-of-windows smoothing to one inference result. A window that
+        contradicts reversing beeps cannot count as a hit for reversing_alarm."""
         self.last_scores = scores
         out: list[Detection] = []
         window_s = self.clf.window_len / SAMPLE_RATE
         sens = self.profile.sensitivity if self.profile is not None else 1.0
         for cls, score in scores.items():
             hist = self._history[cls]
-            hist.append((score >= min(1.0, self._thresholds[cls] / sens), t_window_end))
+            hit = score >= min(1.0, self._thresholds[cls] / sens)
+            if cls == AlertClass.REVERSING_ALARM and contradicts_reversing:
+                hit = False
+            hist.append((hit, t_window_end))
             positives = [t for ok, t in hist if ok]
             if len(positives) >= self.cfg.smoothing.hits:
                 out.append(

@@ -15,7 +15,8 @@ gate:
   burst_min_s: 0.25
   burst_max_s: 1.0
   pulse_period_s: [0.6, 1.5]
-  confirm_timeout_s: 1.6
+  confirm_timeout_s: 1.6    # a gate candidate waits this long for the classifier to confirm it
+  confirm_with_classifier: true   # a gate hit alone never shows BACKUP ALARM when a classifier runs
 classifier:
   enabled: true
   model_path: models/yamnet_classification.tflite   # final name set by fetch_models.py
@@ -98,6 +99,13 @@ policy:
 # These are starting assumptions about what each situation needs. Edit them freely.
 profiles:
   active: home
+  # SIMULATED context triggers for the demo. Tapping one on the phone page switches the profile.
+  # Nothing here detects a place, a movement or the time of day, and the page says so.
+  triggers:
+    leave_home: {label: Leaving home, profile: commute}
+    arrive_home: {label: Arriving home, profile: home}
+    start_focus: {label: Starting focus time, profile: focus}
+    go_to_sleep: {label: Going to sleep, profile: sleep}
   definitions:
     focus:                  # studying or deep work: only urgent things get through
       label: Focus

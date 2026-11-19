@@ -14,11 +14,12 @@ import queue
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from sentinel.adapters.base import AsyncDisplay
 from sentinel.buffer import RingBuffer
-from sentinel.classify.yamnet import ClassifierStage
+from sentinel.classify.yamnet import ClassifierObservation, ClassifierStage
 from sentinel.config import SentinelConfig
 from sentinel.eventlog import AsyncEventLog, EventLog, utc_now_iso
 from sentinel.gate.tonal import GateParams, GateState, process
@@ -33,7 +34,15 @@ from sentinel.policy import (
 )
 from sentinel.profile import ProfileStore
 from sentinel.recording import WavRecorder
-from sentinel.types import Alert, AudioFrame, AudioSource, Detection, DisplayAdapter, Level
+from sentinel.types import (
+    Alert,
+    AlertClass,
+    AudioFrame,
+    AudioSource,
+    Detection,
+    DisplayAdapter,
+    Level,
+)
 
 log = logging.getLogger("sentinel.pipeline")
 Clock = Callable[[], float]
@@ -55,6 +64,16 @@ class StreamClock:
         if self._t is None:
             return 0.0
         return self._t + (time.perf_counter() - self._wall)
+
+
+@dataclass
+class _Candidate:
+    """A tonal gate hit waiting for the classifier. It is never shown on its own."""
+
+    t_onset: float
+    t_detect: float
+    score: float
+    expires: float
 
 
 class _SyncDisplay:
@@ -139,6 +158,15 @@ class Pipeline:
         self.classifier = classifier
         if classifier is not None and profile is not None:
             classifier.profile = profile
+        # With a classifier attached, a gate hit is a candidate and needs the classifier's positive
+        # evidence before BACKUP ALARM can show. Without one there is nothing to confirm with, so
+        # gate-only runs keep the old behaviour and say so.
+        self._confirm_gate = (
+            cfg.gate.enabled and cfg.gate.confirm_with_classifier and classifier is not None
+        )
+        if cfg.gate.enabled and cfg.gate.confirm_with_classifier and classifier is None:
+            log.warning("no classifier: gate hits are UNVERIFIED and will alert on their own")
+        self._candidate: _Candidate | None = None
         self.policy = Policy(
             cfg.policy,
             cfg.gate.confirm_timeout_s,
@@ -156,7 +184,7 @@ class Pipeline:
         self._listeners: list[Listener] = []
         self._gate_q: queue.Queue[AudioFrame | None] = queue.Queue(maxsize=200)
         self._clf_q: queue.Queue[AudioFrame | None] = queue.Queue(maxsize=200)
-        self._policy_q: queue.Queue[Detection | None] = queue.Queue()
+        self._policy_q: queue.Queue[Detection | ClassifierObservation | None] = queue.Queue()
 
     def set_profile(self, profile: ProfileStore) -> None:
         """Attach a live profile after construction (the runtime does this)."""
@@ -177,7 +205,56 @@ class Pipeline:
                 cb(message)
 
     # Policy output -> display, log, listeners -------------------------------------------------
+    def _handle_item(self, item: Detection | ClassifierObservation) -> None:
+        if isinstance(item, ClassifierObservation):
+            self._observe(item)
+        else:
+            self._handle_detection(item)
+
+    # Gate candidates --------------------------------------------------------------------------
+    def _expire_candidate(self) -> None:
+        cand = self._candidate
+        if cand is not None and self.clock() >= cand.expires:
+            self._candidate = None
+            self.metrics.count_gate("unconfirmed")
+
+    def _hold(self, det: Detection) -> None:
+        """Keep a gate hit as a candidate. Nothing is shown and nothing is logged yet."""
+        self._expire_candidate()
+        expires = det.t_detect + self.cfg.gate.confirm_timeout_s
+        cand = self._candidate
+        if cand is None:
+            self._candidate = _Candidate(det.t_onset, det.t_detect, det.score, expires)
+            self.metrics.count_gate("candidates")
+        else:  # a later pulse of the same alarm: keep the earliest onset, extend the wait
+            cand.score = max(cand.score, det.score)
+            cand.expires = max(cand.expires, expires)
+
+    def _observe(self, obs: ClassifierObservation) -> None:
+        """A classifier window that ends after the candidate appeared and contradicts reversing
+        beeps kills the candidate."""
+        self._expire_candidate()
+        cand = self._candidate
+        if cand is not None and obs.contradicts_reversing and obs.t_window_end > cand.t_detect:
+            self._candidate = None
+            self.metrics.count_gate("suppressed")
+
     def _handle_detection(self, det: Detection) -> None:
+        reversing = det.alert_class == AlertClass.REVERSING_ALARM
+        if self._confirm_gate and reversing and det.stage == "gate":
+            self._hold(det)
+            return
+        if self._confirm_gate and reversing and det.stage == "classifier":
+            self._expire_candidate()
+            cand, self._candidate = self._candidate, None
+            if cand is not None:  # positive evidence for a pending candidate: merge both stages
+                self.metrics.count_gate("confirmed")
+                merged = Detection(det.alert_class, "gate", cand.score, False, cand.t_onset,
+                                   det.t_detect)  # fmt: skip
+                self._deliver(merged)
+        self._deliver(det)
+
+    def _deliver(self, det: Detection) -> None:
         level = self.profile.level_for(det.alert_class) if self.profile is not None else None
         if self.policy.effective_level(det.alert_class, level) == Level.OFF:
             return  # the active profile turned this sound off: no alert and no event
@@ -187,6 +264,7 @@ class Pipeline:
         self._apply(self.policy.on_detection(det, self.clock(), level, profile))
 
     def _tick(self) -> None:
+        self._expire_candidate()
         self._apply(self.policy.tick(self.clock()))
 
     def _apply(self, actions: list[Action]) -> None:
@@ -272,6 +350,12 @@ class Pipeline:
     def _clf_dets(self, frame: AudioFrame) -> list[Detection]:
         return self.classifier.step(frame, self.ring, self.clock) if self.classifier else []
 
+    def _clf_items(self, frame: AudioFrame) -> list[Detection | ClassifierObservation]:
+        """The classifier's observation for this frame (if it ran), then its detections."""
+        dets = self._clf_dets(frame)
+        obs = self.classifier.take_observation() if self.classifier else None
+        return [*([obs] if obs else []), *dets]
+
     # Synchronous mode --------------------------------------------------------------------------
     def run_sync(self) -> None:
         """Process the whole source on this thread with a virtual clock. Deterministic."""
@@ -281,8 +365,8 @@ class Pipeline:
         for frame in self.source.frames():
             clock.mark(frame.t_end)
             self._ingest(frame)
-            for det in self._gate_dets(frame) + self._clf_dets(frame):
-                self._handle_detection(det)
+            for item in [*self._gate_dets(frame), *self._clf_items(frame)]:
+                self._handle_item(item)
             self._tick()
         self._natural_end = True
         self._finish()
@@ -368,23 +452,23 @@ class Pipeline:
             if frame is None:
                 self._policy_q.put(None)
                 return
-            for det in self._clf_dets(frame):
-                self._policy_q.put(det)
+            for item in self._clf_items(frame):
+                self._policy_q.put(item)
 
     def _policy_worker(self) -> None:
         ended = 0  # one end marker from each detection worker
         while True:
             try:
-                det = self._policy_q.get(timeout=0.05)
+                item = self._policy_q.get(timeout=0.05)
             except queue.Empty:
                 self._tick()
                 continue
-            if det is None:
+            if item is None:
                 ended += 1
                 if ended >= 2:
                     return
                 continue
-            self._handle_detection(det)
+            self._handle_item(item)
             self._tick()
 
     # Shutdown ----------------------------------------------------------------------------------

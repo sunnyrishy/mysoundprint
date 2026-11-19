@@ -70,6 +70,10 @@ class ProfileStore:
         cfg = profiles or ProfilesConfig()
         self._profiles = {pid: self._build(pid, d) for pid, d in cfg.definitions.items()}
         self._active = cfg.active
+        self._triggers = dict(cfg.triggers)
+        # How the active profile was chosen. Memory only, so a restart is always manual.
+        self._mode = "manual"
+        self._trigger: str | None = None
         self._version = 0
         if self._path and self._path.exists():
             # a damaged or invalid file must never stop Sentinel starting
@@ -197,6 +201,20 @@ class ProfileStore:
         with self._lock:
             return list(self._profiles)
 
+    def context(self) -> dict[str, Any]:
+        """How the active profile was chosen: manual, or by a SIMULATED trigger."""
+        with self._lock:
+            return self._context()
+
+    def _context(self) -> dict[str, Any]:  # caller holds the lock
+        trig = self._triggers.get(self._trigger) if self._trigger else None
+        return {
+            "mode": self._mode,
+            "simulated": self._mode == "simulated",
+            "trigger": self._trigger,
+            "trigger_label": trig.label if trig else None,
+        }
+
     def level_for(self, alert_class: AlertClass) -> Level:
         """The level the active profile asks for. The protected rule is applied by the policy."""
         with self._lock:
@@ -219,6 +237,7 @@ class ProfileStore:
         """The original shape plus the active profile name and its levels. Sent over WebSocket."""
         out = self.get()
         with self._lock:
+            out["context"] = self._context()
             out["active"] = self._active
             out["levels"] = {k: lv.value for k, lv in self._profiles[self._active].levels.items()}
         return out
@@ -261,6 +280,16 @@ class ProfileStore:
                 "levels": LEVEL_NAMES,
                 "protected": sorted(c.value for c in self._protected),
                 "effective": effective,
+                "context": self._context(),
+                "triggers": [
+                    {
+                        "id": tid,
+                        "label": t.label,
+                        "profile": t.profile,
+                        "profile_label": self._profiles[t.profile].label,
+                    }
+                    for tid, t in self._triggers.items()
+                ],
             }
 
     # ---- writing ----------------------------------------------------------------------------
@@ -270,8 +299,31 @@ class ProfileStore:
             if name not in self._profiles:
                 raise ProfileError(f"unknown profile '{name}'. Choose from {list(self._profiles)}")
             self._active = name
+            self._mode, self._trigger = "manual", None  # choosing a profile is a manual choice
             self._version += 1
             self._save()
+        return self.view()
+
+    def simulate(self, trigger_id: str) -> dict[str, Any]:
+        """Apply a SIMULATED context trigger: switch to its profile and remember that it was
+        simulated. Nothing detects anything. Raises ProfileError for an unknown trigger."""
+        with self._lock:
+            trig = self._triggers.get(trigger_id)
+            if trig is None:
+                raise ProfileError(
+                    f"unknown simulated trigger '{trigger_id}'. Choose from {list(self._triggers)}"
+                )
+            self._active = trig.profile
+            self._mode, self._trigger = "simulated", trigger_id
+            self._version += 1
+            self._save()
+        return self.view()
+
+    def return_to_manual(self) -> dict[str, Any]:
+        """Leave simulated context. The active profile stays, now as a manual choice."""
+        with self._lock:
+            self._mode, self._trigger = "manual", None
+            self._version += 1
         return self.view()
 
     def update(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -289,6 +341,8 @@ class ProfileStore:
             candidate = copy.deepcopy(self._profiles[active])
             self._apply(candidate, {k: v for k, v in data.items() if k != "active"})
             self._profiles[active] = candidate
+            if active != self._active:
+                self._mode, self._trigger = "manual", None
             self._active = active
             self._version += 1
             self._save()
