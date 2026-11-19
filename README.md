@@ -95,11 +95,11 @@ We play one doorbell sound three times.
 
 This is what "understands you" looks like in ten seconds: the person and the situation change the outcome, not just the sound.
 
-### Planned features, in build order
+### Features, in build order (1 to 3 are built, 4 to 8 are planned)
 
-1. **Sound catalog.** A configured list of sounds, each with a glasses label of at most 12 characters per line and a default level. The classifier already knows all of these: doorbell, ding-dong, knock, siren, police and ambulance siren, bicycle bell, baby cry, smoke detector, fire alarm, microwave oven, alarm clock, vehicle horn, reversing beeps.
-2. **Four levels per sound.** `interrupt` (lens, blink, phone vibration), `quiet` (lens, no blink), `later` (logged silently, shown in the phone digest), `off` (dropped).
-3. **Named profiles.** Focus, Home, Sleep, Commute. Each maps every sound to a level and sets a sensitivity. One is active at a time.
+1. **Sound catalog. Built.** A configured list of sounds, each with a glasses label of at most 12 characters per line and a default level. The classifier already knows all of these: doorbell, ding-dong, knock, siren, police and ambulance siren, bicycle bell, baby cry, smoke detector, fire alarm, microwave oven, alarm clock, vehicle horn, reversing beeps.
+2. **Four levels per sound. Built.** `interrupt` (lens, blink, phone vibration), `quiet` (lens, no blink), `later` (logged silently, shown in the phone digest), `off` (dropped).
+3. **Named profiles. Built.** Focus, Home, Sleep, Commute. Each maps every sound to a level and sets a sensitivity. One is active at a time. Fire and smoke alarms are protected: they always interrupt, even in Sleep.
 4. **Context switch.** The wearer says "I am commuting" or "I am home" on the phone. A simulated place or time trigger is also available and is always labeled as simulated.
 5. **Personal Sound DNA (experimental).** The wearer records about 5 seconds of their own sound (their microwave beep, their own chime), names it and picks a level. Matching uses a fingerprint of the sound. It only ships if it passes a real test (section 9).
 6. **Feedback adaptation.** A "not useful" button on the phone. After three dismissals of the same sound in a profile, the phone suggests lowering its level. The wearer accepts or ignores it. Nothing changes by itself.
@@ -122,7 +122,7 @@ Sound pattern learning (beep sequences), a QR code profile swap, an analytics da
 
 This repository started as a project called **Sentinel**, a sound to sight alert system for hearing-protected workers (reversing alarms, horns, fire alarms). Sentinel is the engine. The Python package is still named `sentinel`. We keep that name in the code to avoid a risky rename right before the event.
 
-### Built and tested (232 automated tests pass)
+### Built and tested (285 automated tests pass, 3 optional real-audio tests skip without a dataset)
 
 | Part | What it does |
 |---|---|
@@ -132,14 +132,16 @@ This repository started as a project called **Sentinel**, a sound to sight alert
 | Alert policy | One alert on screen at a time, priorities, cooldowns, confirm or cancel, time to live. |
 | Event log | SQLite, event metadata only, with latencies and an acknowledged flag. |
 | Dashboard | FastAPI plus WebSocket, one static page, a glasses display simulator, kiosk mode, CSV export. |
-| Phone page | Mobile page at `/phone`: the same alert with vibration, acknowledge, a simple profile (per sound on or off, sensitivity), a test alert button. |
+| Sound catalog | 10 sounds in the config (doorbell, knock, siren, bicycle bell, baby cry, microwave, alarm clock, fire and smoke alarm, vehicle horn, reversing beeps). Class map names, thresholds, display labels and default levels all live in `config/default.yaml`. |
+| Levels and profiles | Four levels (interrupt, quiet, later, off) and four named profiles resolved at detection time. A protected rule keeps fire and smoke alarms from being suppressed. The event log records the effective level and the active profile, and old databases are upgraded in place. |
+| Phone page | Mobile page at `/phone`: the same alert with vibration for interrupt alerts, acknowledge, a profile selector, a level per sound, a sensitivity slider, a test alert button. |
 | Bridge | The core publishes alerts over WebSocket so a phone app or script can forward them to the glasses. A reference subscriber is included. |
 | Evaluation tools | Test set builder, evaluator with recall by class and noise level, false alerts per hour, latency, threshold sweeps. Every report states whether the audio was synthetic or real. |
 | Demo mode | One command starts everything. If the microphone cannot be opened it falls back to a labeled replay with a visible RECORDING badge. |
 
 ### Not built yet
 
-Everything in the planned feature list in section 4 beyond the simple profile that exists today. In particular: the wider sound catalog (today only three sounds plus smoke alarm are configured), levels, named profiles, the context switch, Sound DNA, feedback adaptation, the history view and the privacy screen.
+The context switch (the manual profile switch exists, the labeled simulated trigger does not), Sound DNA, feedback adaptation, the history view (the `later` events are saved and `GET /api/events?level=later` returns them, but the phone has no screen for them yet), the privacy screen.
 
 ### Blocked on the SDK
 
@@ -148,7 +150,8 @@ The real glasses display adapter and the glasses microphone adapter. Both exist 
 ### Verified and not verified
 
 - Verified on synthetic audio: gate behavior (including harmonics, clipping, reverb, pitch drift, band edges), policy rules, event log, dashboard, bridge, evaluation tooling, a full real-time run with the classifier at about 3 percent of one CPU core.
-- Verified on real audio: one clip. The classifier loads offline and scored a cat meow as `Cat`. That is all.
+- Verified on real audio, development only: a smell test on 46 clips from the ESC-50 dataset (4 per category, not committed, not a measurement). The classifier path looked reasonable, for example knock 4 of 4 and siren 4 of 4 clips detected, with no classifier events on clapping, footsteps, typing or washing machine. Doorbell is untested because ESC-50 has no doorbell class.
+- **Open finding:** on those same real clips the tonal gate flashes a provisional `BACKUP ALARM` on tonal everyday sounds (crying baby, vacuum cleaner, laughing). Most are cancelled after 1.6 s, but they show on the lens first. With the default Home profile that is a real false alert risk. It is not fixed yet. See D58 in `docs/DECISIONS.md` for the options.
 - Not verified: the live microphone path on real hardware, recognition of real alarms, doorbells, sirens, anything on the glasses.
 - Software latency on a synthetic backup alarm is about 0.3 s from sound onset to the display call returning. This is not a glasses number.
 
@@ -228,6 +231,8 @@ Phone page (a phone on the same network, no password, so use your own hotspot):
 python tools/demo.py --lan
 ```
 
+The phone page switches between the four profiles and sets a level for each sound.
+
 Open the printed `http://<laptop-ip>:8765/phone` on the phone. The dashboard is at `http://127.0.0.1:8765/`, and kiosk mode at `/?kiosk=1`.
 
 Other tools: `tools/evaluate.py`, `tools/make_test_set.py`, `tools/latency_probe.py`, `tools/hw_smoke_test.py` and `tools/bridge_echo.py`. Each has `--help`.
@@ -241,7 +246,7 @@ docs/
   EVENT_PLAN.md          schedule, scoring map, SDK walkthrough questions, stage script
   SDK_NOTES.md           what we know about the glasses, slots for the answers
   RECORDING_GUIDE.md     how to record a real test set
-  DECISIONS.md           every design choice and why (D1 to D49)
+  DECISIONS.md           every design choice and why (D1 to D59)
   ONE_PAGER.md           one page summary for judges
   SPEC.md                the original engineering spec the engine was built from
 src/sentinel/            types, config, buffer, gate, classifier, policy, event log, pipeline,

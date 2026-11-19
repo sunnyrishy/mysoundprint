@@ -43,8 +43,8 @@ def test_unknown_nested_key_fails_with_path() -> None:
 
 def test_unknown_class_name_fails_and_lists_valid_ones() -> None:
     raw = raw_default()
-    raw["classifier"]["classes"]["siren"] = {"names": ["Siren"], "threshold": 0.3}
-    with pytest.raises(ConfigError, match="unknown alert class 'siren'") as exc:
+    raw["classifier"]["classes"]["klaxon"] = {"names": ["Klaxon"], "threshold": 0.3}
+    with pytest.raises(ConfigError, match="unknown alert class 'klaxon'") as exc:
         config_from_dict(raw)
     assert "reversing_alarm" in str(exc.value)
 
@@ -68,10 +68,14 @@ def test_missing_file_is_clear(tmp_path) -> None:
         load_config(tmp_path / "nope.yaml")
 
 
-def test_every_alert_class_has_wording() -> None:
-    assert set(ALERT_WORDING) == set(AlertClass)
-    for tier, line1, line2 in ALERT_WORDING.values():
-        assert tier == 1 and line2 == "NEARBY" and len(line1) <= 12
+def test_original_spec_wording_is_unchanged() -> None:
+    """The three sounds from the spec keep their wording. It is the fallback if a config omits
+    labels. Wording for every other sound lives in the config (see test_catalog_levels)."""
+    assert ALERT_WORDING == {
+        AlertClass.REVERSING_ALARM: (1, "BACKUP ALARM", "NEARBY"),
+        AlertClass.VEHICLE_HORN: (1, "VEHICLE HORN", "NEARBY"),
+        AlertClass.FIRE_ALARM: (1, "FIRE ALARM", "NEARBY"),
+    }
 
 
 def test_cli_help_prints_usage(capsys) -> None:

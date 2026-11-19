@@ -214,7 +214,7 @@ def test_tick_resolves_in_one_call_after_a_long_gap() -> None:
     assert p.displayed_class is None
 
 
-@pytest.mark.parametrize("cls", list(AlertClass))
+@pytest.mark.parametrize("cls", [R, H, F])
 def test_wording_matches_spec(cls: AlertClass) -> None:
     p = make_policy()
     alert = shows(p.on_detection(det(cls, "classifier"), now=0.0))[0].alert

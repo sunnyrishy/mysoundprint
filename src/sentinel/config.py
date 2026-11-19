@@ -5,16 +5,35 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-from sentinel.types import AlertClass, DisplayCaps
+from sentinel.types import ALERT_WORDING, AlertClass, DisplayCaps, Level
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "default.yaml"
 VALID_CLASSES = [c.value for c in AlertClass]
+SENSITIVITY_MIN = 0.5
+SENSITIVITY_MAX = 1.5
+MAX_LABEL_CHARS = 12  # the assumed display width. The display adapter still truncates.
+
+
+def _level_from_yaml(value: Any) -> Any:
+    """YAML 1.1 reads an unquoted `off` as the boolean False. Accept it as the level off."""
+    return Level.OFF if value is False else value
+
+
+LevelValue = Annotated[Level, BeforeValidator(_level_from_yaml)]
 
 
 class ConfigError(ValueError):
@@ -73,8 +92,22 @@ class Smoothing(_Strict):
 
 
 class ClassRule(_Strict):
+    """One entry of the sound catalog: what to listen for and how to show it."""
+
     names: list[str] = Field(min_length=1)
     threshold: float = Field(gt=0, le=1)
+    label1: str | None = Field(None, min_length=1, max_length=MAX_LABEL_CHARS)
+    label2: str | None = Field(None, min_length=1, max_length=MAX_LABEL_CHARS)
+    default_level: LevelValue = Level.INTERRUPT
+
+    def labels(self, alert_class: AlertClass) -> tuple[str, str]:
+        """Display text. Config first, then the original spec wording, then the class name."""
+        legacy = ALERT_WORDING.get(alert_class)
+        line1 = self.label1 or (
+            legacy[1] if legacy else alert_class.value.replace("_", " ").upper()
+        )
+        line2 = self.label2 or (legacy[2] if legacy else "NEARBY")
+        return line1[:MAX_LABEL_CHARS], line2[:MAX_LABEL_CHARS]
 
 
 class ClassifierConfig(_Strict):
@@ -93,21 +126,27 @@ class ClassifierConfig(_Strict):
                 raise ValueError(f"unknown alert class '{key}'. Valid classes: {VALID_CLASSES}")
         return v
 
+    def catalog(self) -> dict[AlertClass, ClassRule]:
+        """The sound catalog keyed by AlertClass."""
+        return {AlertClass(k): rule for k, rule in self.classes.items()}
+
 
 class PolicyConfig(_Strict):
     cooldown_s: float = Field(5.0, ge=0)
     ttl_s: float = Field(3.0, gt=0)
     blink: bool = True
     priority: list[str] = Field(default_factory=lambda: [c.value for c in AlertClass])
+    # Sounds that always interrupt, whatever the active profile says (explicit safety rule).
+    protected: list[str] = Field(default_factory=lambda: [AlertClass.FIRE_ALARM.value])
 
-    @field_validator("priority")
+    @field_validator("priority", "protected")
     @classmethod
-    def _check_priority(cls, v: list[str]) -> list[str]:
+    def _check_class_list(cls, v: list[str], info: Any) -> list[str]:
         for name in v:
             if name not in VALID_CLASSES:
-                raise ValueError(f"unknown alert class '{name}' in policy.priority")
+                raise ValueError(f"unknown alert class '{name}' in policy.{info.field_name}")
         if len(set(v)) != len(v):
-            raise ValueError("policy.priority has duplicates")
+            raise ValueError(f"policy.{info.field_name} has duplicates")
         return v
 
 
@@ -124,6 +163,46 @@ class CapsConfig(_Strict):
             color=self.color,
             supports_blink=self.supports_blink,
         )
+
+
+def _default_profile_definitions() -> dict[str, ProfileDef]:
+    return {name: ProfileDef(label=name.title()) for name in ("focus", "home", "sleep", "commute")}
+
+
+class ProfileDef(_Strict):
+    """One named profile: a level per sound (missing sounds use their catalog default) and a
+    sensitivity. Sensitivity above 1 catches more, below 1 gives fewer false alerts."""
+
+    label: str | None = Field(None, min_length=1, max_length=24)
+    sensitivity: float = Field(1.0, ge=SENSITIVITY_MIN, le=SENSITIVITY_MAX)
+    levels: dict[str, LevelValue] = Field(default_factory=dict)
+
+    @field_validator("levels")
+    @classmethod
+    def _check_levels(cls, v: dict[str, LevelValue]) -> dict[str, LevelValue]:
+        for name in v:
+            if name not in VALID_CLASSES:
+                raise ValueError(f"unknown alert class '{name}'. Valid classes: {VALID_CLASSES}")
+        return v
+
+
+class ProfilesConfig(_Strict):
+    active: str = "home"
+    definitions: dict[str, ProfileDef] = Field(default_factory=_default_profile_definitions)
+
+    @model_validator(mode="after")
+    def _check(self) -> ProfilesConfig:
+        if not self.definitions:
+            raise ValueError("profiles.definitions needs at least one profile")
+        for name in self.definitions:
+            if not name.replace("_", "").isalnum() or name != name.lower():
+                raise ValueError(f"profile id '{name}' must be lowercase letters, digits or _")
+        if self.active not in self.definitions:
+            raise ValueError(
+                f"profiles.active '{self.active}' is not defined. Choose from "
+                f"{sorted(self.definitions)}"
+            )
+        return self
 
 
 class DisplayConfig(_Strict):
@@ -152,6 +231,7 @@ class SentinelConfig(_Strict):
     gate: GateConfig = GateConfig()
     classifier: ClassifierConfig
     policy: PolicyConfig = PolicyConfig()
+    profiles: ProfilesConfig = Field(default_factory=ProfilesConfig)
     display: DisplayConfig = DisplayConfig()
     dashboard: DashboardConfig = DashboardConfig()
     eventlog: EventLogConfig = EventLogConfig()

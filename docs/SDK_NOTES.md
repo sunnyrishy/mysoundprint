@@ -30,6 +30,32 @@ These are confirmed by the organizers' own page. They answer some questions and 
 
 See `docs/EVENT_PLAN.md` for the plan built from these.
 
+## SDK intake checklist
+
+Fill this in at the 7:35 PM walkthrough and in the first 90 minutes. Every fact below is **UNKNOWN** today. Do not write code against a guess. Quote the source (organizer, doc page, sample app) and the time.
+
+| # | Question | Answer | Source and time |
+|---|---|---|---|
+| 1 | Exact SDK format and where the docs are (Android library, BLE protocol, cloud API, phone app only, other) | UNKNOWN | |
+| 2 | Can text be sent straight to the display? Any sample app that does it? | UNKNOWN | |
+| 3 | Display limits: characters per line, number of lines, update rate, color, icons, native blink, brightness control | UNKNOWN (config assumes 2 lines of 12, green, no blink) | |
+| 4 | Is a phone mandatory? Which phones and OS versions? | UNKNOWN | |
+| 5 | Can a laptop connect to the glasses directly? Over what? | UNKNOWN | |
+| 6 | Can our app read the glasses microphone (PCM, sample rate, channels)? | UNKNOWN | |
+| 7 | Is an external microphone permitted for the event? | UNKNOWN | |
+| 8 | Are pre-built code and pretrained models allowed? Own speaker and alarm sounds at the table and on stage? | UNKNOWN (not stated on the event page) | |
+| 9 | Typical delay from our call to text on the lens | UNKNOWN | |
+
+**First real display test, the only goal of the first 90 minutes.** Get one fixed message on the physical lens, then a second one that replaces it, then 20 updates in a row without a disconnect.
+
+1. Pair the glasses the way the organizers say. Confirm text appears using their own sample app or tool first. That proves the hardware path before we write anything.
+2. Write the smallest piece that sends text through the documented path. Its shape depends on answers 1, 4 and 5, so it cannot be designed yet. Candidates, only if the docs confirm them: a thin phone app or script that subscribes to our WebSocket (`tools/bridge_echo.py` is the template, `forward_to_glasses()` is the empty slot), or an implementation of `adapters/display_microlumin.py`. Neither is written, and nothing in this repo has run on the glasses.
+3. Send the fixed text from the phone page with **Send a test alert to the glasses** (`POST /api/test-alert`, it goes through the real display path), or run `python tools/hw_smoke_test.py --display bridge` once an adapter or bridge exists.
+4. Record what happened in the Measurements table below: call time, visible delay (slow motion video), any disconnects, readability in bright light.
+5. Only then connect real alerts. Do not polish anything else until step 3 works.
+
+If the SDK blocks us, ask the hardware team immediately. Do not spend the night on the simulator, because the event rules make "Works on the glasses" the one criterion that can disqualify a team.
+
 ## Integration slots
 
 Every unknown has a slot, a safe default and a place to record the answer.

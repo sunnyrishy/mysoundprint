@@ -282,7 +282,8 @@
   }
   function resultCell(r) {
     const td = document.createElement("td");
-    if (r.cancel_reason === "timeout") { td.className = "warn"; td.textContent = "Cancelled (timeout)"; }
+    if (r.level === "later") { td.className = "muted"; td.textContent = "Saved for later"; }
+    else if (r.cancel_reason === "timeout") { td.className = "warn"; td.textContent = "Cancelled (timeout)"; }
     else if (r.cancel_reason === "superseded") { td.className = "muted"; td.textContent = "Superseded"; }
     else if (r.confirmed) { td.className = "ok"; td.textContent = "Confirmed"; }
     else { td.className = "muted"; td.textContent = "Shown, awaiting confirmation"; }

@@ -33,14 +33,20 @@ CREATE TABLE IF NOT EXISTS events (
   alarm_to_display_ms REAL,          -- t_display - t_onset
   acknowledged INTEGER NOT NULL DEFAULT 0,
   source TEXT NOT NULL,              -- live | replay | synthetic
-  config_hash TEXT NOT NULL
+  config_hash TEXT NOT NULL,
+  level TEXT,                        -- effective level: interrupt | quiet | later (old rows NULL)
+  profile TEXT                       -- active profile at detection (old rows NULL)
 );
 """
+
+# Columns added after the first release. Databases created before them are upgraded in place by
+# adding the columns. Old rows keep NULL, so existing history stays readable.
+MIGRATIONS = {"level": "TEXT", "profile": "TEXT"}
 
 COLUMNS = [
     "id", "ts_wall", "alert_class", "stage", "score", "confirmed", "cancel_reason", "t_onset",
     "t_detect", "t_display", "processing_ms", "alarm_to_display_ms", "acknowledged", "source",
-    "config_hash",
+    "config_hash", "level", "profile",
 ]  # fmt: skip
 UPDATABLE = {
     "stage", "score", "confirmed", "cancel_reason", "t_display", "processing_ms",
@@ -83,8 +89,16 @@ class EventLog:
         self._lock = threading.RLock()
         with self._lock:
             self._conn.executescript(SCHEMA)
+            self._migrate()
             self._conn.commit()
         self._next = self._max_numeric_id() + 1
+
+    def _migrate(self) -> None:
+        """Add any column this version expects that an older database file does not have yet."""
+        have = {r[1] for r in self._conn.execute("PRAGMA table_info(events)")}
+        for column, sql_type in MIGRATIONS.items():
+            if column not in have:
+                self._conn.execute(f"ALTER TABLE events ADD COLUMN {column} {sql_type}")
 
     def _max_numeric_id(self) -> int:
         best = 0
@@ -145,11 +159,15 @@ class EventLog:
             row = self._conn.execute("SELECT * FROM events WHERE id = ?", [event_id]).fetchone()
         return dict(row) if row else None
 
-    def list(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
-        """Newest first."""
+    def list(
+        self, limit: int = 100, offset: int = 0, level: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Newest first. level filters by effective level, for example 'later' for the digest."""
+        where, args = ("WHERE level = ? ", [level]) if level else ("", [])
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM events ORDER BY rowid DESC LIMIT ? OFFSET ?", [limit, offset]
+                f"SELECT * FROM events {where}ORDER BY rowid DESC LIMIT ? OFFSET ?",
+                [*args, limit, offset],
             ).fetchall()
         return [dict(r) for r in rows]
 

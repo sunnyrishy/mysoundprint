@@ -143,8 +143,35 @@ def create_app(
             snapshot = profile.update(update)
         except ProfileError as err:
             raise HTTPException(status_code=422, detail=str(err)) from err
-        hub.publish({"type": "profile", **snapshot})
+        hub.publish({"type": "profile", **profile.view()})
         return snapshot
+
+    @app.get("/api/profiles")
+    def get_profiles() -> dict[str, Any]:
+        """Profiles, sounds, levels and the protected sounds, for the phone page."""
+        return (profile or ProfileStore()).snapshot()
+
+    @app.post("/api/profiles/active")
+    def switch_profile(body: Annotated[dict[str, Any], Body()]) -> dict[str, Any]:
+        if profile is None:
+            raise HTTPException(status_code=503, detail="profile is not enabled")
+        try:
+            view = profile.set_active(str(body.get("name", "")))
+        except ProfileError as err:
+            raise HTTPException(status_code=422, detail=str(err)) from err
+        hub.publish({"type": "profile", **view})
+        return profile.snapshot()
+
+    @app.post("/api/profiles/{name}")
+    def edit_profile(name: str, body: Annotated[dict[str, Any], Body()]) -> dict[str, Any]:
+        if profile is None:
+            raise HTTPException(status_code=503, detail="profile is not enabled")
+        try:
+            view = profile.update_profile(name, body)
+        except ProfileError as err:
+            raise HTTPException(status_code=422, detail=str(err)) from err
+        hub.publish({"type": "profile", **view})
+        return profile.snapshot()
 
     @app.post("/api/test-alert")
     def send_test_alert() -> dict[str, Any]:
@@ -154,8 +181,10 @@ def create_app(
         return {"sent": True}
 
     @app.get("/api/events")
-    def events(limit: int = Query(100, ge=1, le=1000)) -> list[dict[str, Any]]:
-        return eventlog.list(limit=limit)
+    def events(
+        limit: int = Query(100, ge=1, le=1000), level: str | None = Query(None)
+    ) -> list[dict[str, Any]]:
+        return eventlog.list(limit=limit, level=level)
 
     @app.get("/api/events.csv")
     def events_csv() -> Response:

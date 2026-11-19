@@ -108,7 +108,9 @@ def start_runtime(
         names.append("sim")
     needs_hub = any(n in ("sim", "bridge") for n in names)
     eventlog = EventLog(db or cfg.eventlog.path)
-    profile = ProfileStore(None if (db or cfg.eventlog.path) == ":memory:" else "data/profile.json")
+    profile = ProfileStore.from_config(
+        cfg, None if (db or cfg.eventlog.path) == ":memory:" else "data/profile.json"
+    )
     if lan:
         cfg.dashboard.host = "0.0.0.0"  # reachable from phones on this network
     holder: dict[str, Runtime] = {}

@@ -33,7 +33,7 @@ from sentinel.policy import (
 )
 from sentinel.profile import ProfileStore
 from sentinel.recording import WavRecorder
-from sentinel.types import Alert, AudioFrame, AudioSource, Detection, DisplayAdapter
+from sentinel.types import Alert, AudioFrame, AudioSource, Detection, DisplayAdapter, Level
 
 log = logging.getLogger("sentinel.pipeline")
 Clock = Callable[[], float]
@@ -139,7 +139,12 @@ class Pipeline:
         self.classifier = classifier
         if classifier is not None and profile is not None:
             classifier.profile = profile
-        self.policy = Policy(cfg.policy, cfg.gate.confirm_timeout_s, self.eventlog.next_id)
+        self.policy = Policy(
+            cfg.policy,
+            cfg.gate.confirm_timeout_s,
+            self.eventlog.next_id,
+            catalog=cfg.classifier.catalog(),
+        )
         self.clock: Clock = time.monotonic
         self._config_hash = cfg.config_hash()
         self._recorder = (
@@ -173,11 +178,13 @@ class Pipeline:
 
     # Policy output -> display, log, listeners -------------------------------------------------
     def _handle_detection(self, det: Detection) -> None:
-        if self.profile is not None and not self.profile.is_enabled(det.alert_class):
-            return  # this wearer turned this sound off: no alert and no event
+        level = self.profile.level_for(det.alert_class) if self.profile is not None else None
+        if self.policy.effective_level(det.alert_class, level) == Level.OFF:
+            return  # the active profile turned this sound off: no alert and no event
         if self.on_detection:
             self.on_detection(det)
-        self._apply(self.policy.on_detection(det, self.clock()))
+        profile = self.profile.active if self.profile is not None else None
+        self._apply(self.policy.on_detection(det, self.clock(), level, profile))
 
     def _tick(self) -> None:
         self._apply(self.policy.tick(self.clock()))
@@ -205,6 +212,8 @@ class Pipeline:
             score=e.score,
             confirmed=e.confirmed,
             cancel_reason=e.cancel_reason,
+            level=e.level,
+            profile=e.profile,
             t_onset=e.t_onset,
             t_detect=e.t_detect,
             source=self.source_label,
@@ -219,6 +228,8 @@ class Pipeline:
                 "stage": e.stage,
                 "confirmed": e.confirmed,
                 "cancel_reason": e.cancel_reason,
+                "level": e.level,
+                "profile": e.profile,
                 "source": self.source_label,
             },
         )

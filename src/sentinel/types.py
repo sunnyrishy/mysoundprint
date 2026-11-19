@@ -13,9 +13,31 @@ SAMPLE_RATE = 16_000
 
 
 class AlertClass(str, Enum):
+    """The finite sound catalog. Labels, class map names and default levels live in the config.
+
+    Some entries cover several AudioSet classes: DOORBELL also listens for Ding-dong, SIREN also
+    for police and ambulance sirens, FIRE_ALARM also for Smoke detector.
+    """
+
     REVERSING_ALARM = "reversing_alarm"
     VEHICLE_HORN = "vehicle_horn"
     FIRE_ALARM = "fire_alarm"
+    DOORBELL = "doorbell"
+    KNOCK = "knock"
+    SIREN = "siren"
+    BICYCLE_BELL = "bicycle_bell"
+    BABY_CRY = "baby_cry"
+    MICROWAVE = "microwave"
+    ALARM_CLOCK = "alarm_clock"
+
+
+class Level(str, Enum):
+    """How much a sound is allowed to interrupt the wearer. Resolved per detection."""
+
+    INTERRUPT = "interrupt"  # show on the display, blink if the display allows it, phone vibrates
+    QUIET = "quiet"  # show on the display, no blink, no vibration
+    LATER = "later"  # save the event for the phone history, never show it
+    OFF = "off"  # drop the detection, no alert and no event
 
 
 @dataclass(frozen=True)
@@ -71,7 +93,8 @@ class DisplayAdapter(Protocol):
     def close(self) -> None: ...
 
 
-# Alert wording table from the spec. Direction is unknown in v1, so line 2 is always NEARBY.
+# Wording for the three sounds in the original spec. It is only the fallback: the sound catalog in
+# config/default.yaml (label1, label2) wins. Direction is unknown, so line 2 never claims one.
 ALERT_WORDING: dict[AlertClass, tuple[int, str, str]] = {
     AlertClass.REVERSING_ALARM: (1, "BACKUP ALARM", "NEARBY"),
     AlertClass.VEHICLE_HORN: (1, "VEHICLE HORN", "NEARBY"),

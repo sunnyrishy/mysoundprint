@@ -43,6 +43,22 @@ FAKE_NAMES[20] = "Vehicle horn, car horn, honking"
 FAKE_NAMES[21] = "Air horn, truck horn"
 FAKE_NAMES[30] = "Fire alarm"
 FAKE_NAMES[31] = "Smoke detector, smoke alarm"
+for _i, _n in enumerate(
+    [
+        "Doorbell",
+        "Ding-dong",
+        "Knock",
+        "Siren",
+        "Police car (siren)",
+        "Ambulance (siren)",
+        "Bicycle bell",
+        "Baby cry, infant cry",
+        "Microwave oven",
+        "Alarm clock",
+    ],
+    start=40,
+):
+    FAKE_NAMES[_i] = _n
 
 
 class FakeClassifier:

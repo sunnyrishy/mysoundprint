@@ -22,21 +22,139 @@ classifier:
   class_map_path: models/yamnet_class_map.csv
   hop_s: 0.25
   smoothing: {hits: 2, windows: 3}
-  classes:                  # names must match the class map exactly
+  # The sound catalog. Names must match the AudioSet class map exactly. label1 and label2 are the
+  # two display lines (at most 12 characters). default_level is used when a profile does not say.
+  # Thresholds are placeholders until we tune them on real recordings. Being listed here does not
+  # mean a sound is detected reliably.
+  classes:
     reversing_alarm:
       names: ['Reversing beeps']
       threshold: 0.30
+      label1: BACKUP ALARM
+      label2: NEARBY
+      default_level: interrupt
     vehicle_horn:
       names: ['Vehicle horn, car horn, honking', 'Air horn, truck horn']
       threshold: 0.30
-    fire_alarm:
+      label1: VEHICLE HORN
+      label2: NEARBY
+      default_level: interrupt
+    fire_alarm:               # also covers smoke detectors
       names: ['Fire alarm', 'Smoke detector, smoke alarm']
       threshold: 0.30
+      label1: FIRE ALARM
+      label2: NEARBY
+      default_level: interrupt
+    doorbell:                 # also covers Ding-dong
+      names: ['Doorbell', 'Ding-dong']
+      threshold: 0.30
+      label1: DOORBELL
+      label2: NEARBY
+      default_level: interrupt
+    knock:
+      names: ['Knock']
+      threshold: 0.30
+      label1: KNOCK
+      label2: NEARBY
+      default_level: quiet
+    siren:                    # also covers police and ambulance sirens
+      names: ['Siren', 'Police car (siren)', 'Ambulance (siren)']
+      threshold: 0.30
+      label1: SIREN
+      label2: NEARBY
+      default_level: interrupt
+    bicycle_bell:
+      names: ['Bicycle bell']
+      threshold: 0.30
+      label1: BICYCLE BELL
+      label2: NEARBY
+      default_level: quiet
+    baby_cry:
+      names: ['Baby cry, infant cry']
+      threshold: 0.30
+      label1: BABY CRY
+      label2: NEARBY
+      default_level: interrupt
+    microwave:
+      names: ['Microwave oven']
+      threshold: 0.30
+      label1: MICROWAVE
+      label2: NEARBY
+      default_level: later
+    alarm_clock:
+      names: ['Alarm clock']
+      threshold: 0.30
+      label1: ALARM CLOCK
+      label2: NEARBY
+      default_level: quiet
 policy:
   cooldown_s: 5.0
   ttl_s: 3.0
-  blink: true
-  priority: [fire_alarm, reversing_alarm, vehicle_horn]
+  blink: true               # interrupt alerts ask for blink. A display without it emulates or ignores it
+  priority: [fire_alarm, siren, reversing_alarm, vehicle_horn, baby_cry, doorbell, knock,
+             alarm_clock, bicycle_bell, microwave]
+  protected: [fire_alarm]   # always interrupt, even if the active profile says quiet, later or off
+# Named profiles. Each sets a level for every sound: interrupt, quiet, later or off.
+# These are starting assumptions about what each situation needs. Edit them freely.
+profiles:
+  active: home
+  definitions:
+    focus:                  # studying or deep work: only urgent things get through
+      label: Focus
+      sensitivity: 1.0
+      levels:
+        fire_alarm: interrupt
+        siren: quiet
+        reversing_alarm: quiet
+        vehicle_horn: later
+        baby_cry: quiet
+        doorbell: later
+        knock: later
+        alarm_clock: later
+        bicycle_bell: off
+        microwave: later
+    home:                   # at home and awake. Home is the default, so it keeps the original
+      label: Home           # behavior for backup alarms and horns
+      sensitivity: 1.0
+      levels:
+        fire_alarm: interrupt
+        siren: quiet
+        reversing_alarm: interrupt
+        vehicle_horn: later
+        baby_cry: interrupt
+        doorbell: interrupt
+        knock: interrupt
+        alarm_clock: quiet
+        bicycle_bell: off
+        microwave: quiet
+    sleep:                  # asleep: only what must wake you
+      label: Sleep
+      sensitivity: 1.0
+      levels:
+        fire_alarm: interrupt
+        siren: later
+        reversing_alarm: off
+        vehicle_horn: off
+        baby_cry: interrupt
+        doorbell: off
+        knock: off
+        alarm_clock: off
+        bicycle_bell: off
+        microwave: off
+    commute:                # walking, cycling or riding with headphones or earmuffs
+      label: Commute
+      sensitivity: 1.0
+      levels:
+        fire_alarm: interrupt
+        siren: interrupt
+        reversing_alarm: interrupt
+        vehicle_horn: interrupt
+        baby_cry: quiet
+        doorbell: off
+        knock: off
+        alarm_clock: off
+        bicycle_bell: interrupt
+        microwave: off
 display:
   adapter: console          # console | sim | bridge | microlumin
   caps:

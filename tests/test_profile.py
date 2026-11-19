@@ -75,7 +75,7 @@ BAD_UPDATES = [
     {"sensitivity": 5},
     {"sensitivity": "high"},
     {"sensitivity": True},
-    {"enabled": {"siren": True}},
+    {"enabled": {"klaxon": True}},
     {"enabled": {"fire_alarm": "yes"}},
     {"colour": 1},
     [],
