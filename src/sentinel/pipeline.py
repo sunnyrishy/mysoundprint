@@ -141,6 +141,7 @@ class Pipeline:
         eventlog: EventLog | None = None,
         source_label: str = "live",
         profile: ProfileStore | None = None,
+        on_trace: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.cfg = cfg
         self.source = source
@@ -158,14 +159,23 @@ class Pipeline:
         self.classifier = classifier
         if classifier is not None and profile is not None:
             classifier.profile = profile
-        # With a classifier attached, a gate hit is a candidate and needs the classifier's positive
-        # evidence before BACKUP ALARM can show. Without one there is nothing to confirm with, so
-        # gate-only runs keep the old behaviour and say so.
-        self._confirm_gate = (
-            cfg.gate.enabled and cfg.gate.confirm_with_classifier and classifier is not None
-        )
-        if cfg.gate.enabled and cfg.gate.confirm_with_classifier and classifier is None:
-            log.warning("no classifier: gate hits are UNVERIFIED and will alert on their own")
+        # A gate hit is only a candidate. It may show BACKUP ALARM only after the classifier gives
+        # positive evidence for reversing beeps (D60). With no classifier nothing can confirm it,
+        # so no BACKUP ALARM shows. The only way around that is the explicit, default-off
+        # experimental.unverified_gate_only switch (D63), and its alerts say UNVERIFIED.
+        self._unverified_gate = cfg.gate.enabled and cfg.experimental.unverified_gate_only
+        self._confirm_gate = cfg.gate.enabled and not self._unverified_gate
+        if self._unverified_gate:
+            log.warning("EXPERIMENTAL unverified_gate_only is ON: gate hits alert as UNVERIFIED")
+        elif cfg.gate.enabled and classifier is None:
+            log.warning("no classifier: tonal gate hits can never be confirmed, so no BACKUP ALARM")
+        # Event provenance (D66, refined in D69): an event is experimental only if the decision
+        # that created it was an experimental one. That is known at the one place that delivers a
+        # gate-only detection (_deliver), never from the sound, the profile or the run's config.
+        self.on_trace = on_trace
+        self._unverified_ids: set[str] = set()
+        self._deliver_unverified = False
+        self._stream_t = 0.0
         self._candidate: _Candidate | None = None
         self.policy = Policy(
             cfg.policy,
@@ -217,6 +227,7 @@ class Pipeline:
         if cand is not None and self.clock() >= cand.expires:
             self._candidate = None
             self.metrics.count_gate("unconfirmed")
+            self._trace("unconfirmed", cand.t_detect, t_onset=cand.t_onset, score=cand.score)
 
     def _hold(self, det: Detection) -> None:
         """Keep a gate hit as a candidate. Nothing is shown and nothing is logged yet."""
@@ -226,6 +237,7 @@ class Pipeline:
         if cand is None:
             self._candidate = _Candidate(det.t_onset, det.t_detect, det.score, expires)
             self.metrics.count_gate("candidates")
+            self._trace("candidate", det.t_detect, t_onset=det.t_onset, score=det.score)
         else:  # a later pulse of the same alarm: keep the earliest onset, extend the wait
             cand.score = max(cand.score, det.score)
             cand.expires = max(cand.expires, expires)
@@ -234,10 +246,21 @@ class Pipeline:
         """A classifier window that ends after the candidate appeared and contradicts reversing
         beeps kills the candidate."""
         self._expire_candidate()
+        self._trace(
+            "observation", obs.t_window_end, top_class=obs.top_name, top_score=obs.top_score,
+            reversing_score=obs.reversing_score, contradicts=obs.contradicts_reversing,
+        )  # fmt: skip
         cand = self._candidate
         if cand is not None and obs.contradicts_reversing and obs.t_window_end > cand.t_detect:
             self._candidate = None
             self.metrics.count_gate("suppressed")
+            self._trace("suppressed", obs.t_window_end, t_onset=cand.t_onset, score=cand.score)
+
+    def _trace(self, kind: str, t: float, **fields: Any) -> None:
+        """Read-only evaluation hook. It never changes a decision."""
+        if self.on_trace is not None:
+            with contextlib.suppress(Exception):
+                self.on_trace({"kind": kind, "t": t, **fields})
 
     def _handle_detection(self, det: Detection) -> None:
         reversing = det.alert_class == AlertClass.REVERSING_ALARM
@@ -249,6 +272,7 @@ class Pipeline:
             cand, self._candidate = self._candidate, None
             if cand is not None:  # positive evidence for a pending candidate: merge both stages
                 self.metrics.count_gate("confirmed")
+                self._trace("confirmed", det.t_detect, t_onset=cand.t_onset, score=cand.score)
                 merged = Detection(det.alert_class, "gate", cand.score, False, cand.t_onset,
                                    det.t_detect)  # fmt: skip
                 self._deliver(merged)
@@ -261,7 +285,14 @@ class Pipeline:
         if self.on_detection:
             self.on_detection(det)
         profile = self.profile.active if self.profile is not None else None
-        self._apply(self.policy.on_detection(det, self.clock(), level, profile))
+        self._deliver_unverified = (
+            self._unverified_gate and det.alert_class == AlertClass.REVERSING_ALARM
+            and det.stage == "gate"
+        )  # fmt: skip
+        try:
+            self._apply(self.policy.on_detection(det, self.clock(), level, profile))
+        finally:
+            self._deliver_unverified = False
 
     def _tick(self) -> None:
         self._expire_candidate()
@@ -270,9 +301,14 @@ class Pipeline:
     def _apply(self, actions: list[Action]) -> None:
         for a in actions:
             if isinstance(a, CreateEvent):
+                if self._deliver_unverified:
+                    self._unverified_ids.add(a.event_id)
                 self._create(a)
             elif isinstance(a, ShowAlert):
-                self.display.show(a.alert)
+                alert = a.alert
+                if alert.event_id in self._unverified_ids:  # experimental mode: say so on the lens
+                    alert = dataclasses.replace(alert, line2="UNVERIFIED")
+                self.display.show(alert)
             elif isinstance(a, UpdateEvent):
                 self._elog.update(a.event_id, **a.changes)
                 self._emit_event(a.event_id, a.changes)
@@ -281,6 +317,7 @@ class Pipeline:
 
     def _create(self, e: CreateEvent) -> None:
         self._times[e.event_id] = (e.t_onset, e.t_detect)
+        self._trace("event", e.t_detect, event_id=e.event_id, alert_class=e.alert_class.value)
         ts_wall = utc_now_iso()
         self._elog.insert(
             id=e.event_id,
@@ -292,6 +329,7 @@ class Pipeline:
             cancel_reason=e.cancel_reason,
             level=e.level,
             profile=e.profile,
+            experimental=e.event_id in self._unverified_ids,
             t_onset=e.t_onset,
             t_detect=e.t_detect,
             source=self.source_label,
@@ -308,6 +346,7 @@ class Pipeline:
                 "cancel_reason": e.cancel_reason,
                 "level": e.level,
                 "profile": e.profile,
+                "experimental": e.event_id in self._unverified_ids,
                 "source": self.source_label,
             },
         )
@@ -339,7 +378,20 @@ class Pipeline:
             self.on_latency(event_id, s.processing_ms, s.alarm_to_display_ms)
 
     # Shared per-frame work ---------------------------------------------------------------------
+    @property
+    def unverified_events(self) -> frozenset[str]:
+        """Ids of events raised by the experimental gate-only switch (display says UNVERIFIED).
+        The event log schema is unchanged, so this is only known while the pipeline is alive."""
+        return frozenset(self._unverified_ids)
+
+    @property
+    def stream_time(self) -> float:
+        """End time (s) of the last audio frame taken in. Pure audio time, no compute: used by the
+        evaluation harness so its timings are reproducible."""
+        return self._stream_t
+
     def _ingest(self, frame: AudioFrame) -> None:
+        self._stream_t = frame.t_end
         self.ring.write(frame.samples, frame.t_end)
         if self._recorder:
             self._recorder.write(frame.samples)

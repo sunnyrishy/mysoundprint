@@ -87,11 +87,20 @@ def main(argv: list[str] | None = None) -> int:
         help="let phones on the same network open the page (no password)",
     )
     parser.add_argument("--no-dashboard", action="store_true", help="never start the dashboard")
+    parser.add_argument(
+        "--experimental-unverified-gate-only",
+        action="store_true",
+        help="EXPERIMENTAL, off by default: tonal gate hits alert alone, labeled UNVERIFIED. "
+        "Not reliable alarm detection.",
+    )
     args = parser.parse_args(argv)
 
     runtime = None
     try:
         cfg = load_config(args.config)
+        cfg.experimental.unverified_gate_only |= args.experimental_unverified_gate_only
+        if args.experimental_unverified_gate_only:
+            print("EXPERIMENTAL: gate hits alert alone and are labeled UNVERIFIED.")
         audio, label, source_label = load_input(args.input)
         if args.scores:
             print_scores(audio, cfg)
@@ -112,8 +121,8 @@ def main(argv: list[str] | None = None) -> int:
             serve=args.serve, use_dashboard=not args.no_dashboard, lan=args.lan,
         )  # fmt: skip
         stage = None if args.no_classifier else build_classifier_stage(cfg.classifier)
-        if stage is None and cfg.gate.confirm_with_classifier:
-            print("Gate only: no classifier, so backup alarm alerts are UNVERIFIED.")
+        if stage is None and not cfg.experimental.unverified_gate_only:
+            print("No classifier: BACKUP ALARM cannot show (gate hits need the classifier).")
     except (ConfigError, RuntimeError, NotImplementedError) as err:
         print(err, file=sys.stderr)
         if runtime:

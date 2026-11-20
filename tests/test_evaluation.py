@@ -30,6 +30,9 @@ from sentinel.sim.scenario import TruthEvent as SceneTruth
 from sentinel.types import SAMPLE_RATE, AlertClass, Detection
 
 CFG = load_config()
+CFG.experimental.unverified_gate_only = (
+    True  # gate-alone tests: explicit opt-in to the experimental switch (D63)
+)
 ROOT = Path(__file__).resolve().parents[1]
 R, H = AlertClass.REVERSING_ALARM, AlertClass.VEHICLE_HORN
 

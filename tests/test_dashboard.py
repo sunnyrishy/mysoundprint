@@ -233,6 +233,7 @@ def free_port() -> int:
 def test_end_to_end_replay_shows_alert_and_ack_updates_row(tmp_path: Path) -> None:
     """M5 acceptance: a replay shows alerts over the WebSocket; acknowledging updates the row."""
     cfg = load_config()
+    cfg.experimental.unverified_gate_only = True  # gate-alone test: explicit opt-in (D63)
     log, hub = EventLog(), Hub()
     port = free_port()
     server = DashboardServer(create_app(log, hub, stats_interval_s=60), "127.0.0.1", port)
@@ -257,6 +258,7 @@ def test_end_to_end_replay_shows_alert_and_ack_updates_row(tmp_path: Path) -> No
         rendered = render(load_scenario(ROOT / "scenarios" / "tonal_10db.yaml"))
         raw = json.loads(json.dumps(__import__("yaml").safe_load(DEFAULT_CONFIG_PATH.read_text())))
         raw["recording"]["dir"] = str(tmp_path / "rec")
+        raw["experimental"]["unverified_gate_only"] = True  # explicit opt-in (D63)
         pipe = Pipeline(
             config_from_dict(raw),
             AudioFileSource(rendered.audio, t0=0.0),
@@ -270,7 +272,8 @@ def test_end_to_end_replay_shows_alert_and_ack_updates_row(tmp_path: Path) -> No
         types = [m["type"] for m in received]
         assert "alert" in types and "clear" in types and "event" in types
         shown = next(m for m in received if m["type"] == "alert")
-        assert shown["line1"] == "BACKUP ALARM" and shown["line2"] == "NEARBY" and shown["blink"]
+        assert shown["line1"] == "BACKUP ALARM" and shown["blink"]
+        assert shown["line2"] == "UNVERIFIED"  # the experimental gate-only label
         event_id = shown["event_id"]
         r = httpx.post(f"http://127.0.0.1:{port}/api/events/{event_id}/ack")
         assert r.status_code == 200

@@ -55,6 +55,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--duration", type=float, default=None, help="stop after N seconds")
     parser.add_argument("--no-classifier", action="store_true", help="gate only, no model needed")
     parser.add_argument("--list-devices", action="store_true")
+    parser.add_argument(
+        "--experimental-unverified-gate-only",
+        action="store_true",
+        help="EXPERIMENTAL, off by default: tonal gate hits alert alone, labeled UNVERIFIED. "
+        "Not reliable alarm detection.",
+    )
     args = parser.parse_args(argv)
     if args.list_devices:
         print(list_devices())
@@ -63,6 +69,9 @@ def main(argv: list[str] | None = None) -> int:
     runtime = None
     try:
         cfg = load_config(args.config)
+        cfg.experimental.unverified_gate_only |= args.experimental_unverified_gate_only
+        if args.experimental_unverified_gate_only:
+            print("EXPERIMENTAL: gate hits alert alone and are labeled UNVERIFIED.")
         display_name = args.display
         if args.sim:
             display_name = (display_name or cfg.display.adapter) + ",sim"
@@ -70,8 +79,8 @@ def main(argv: list[str] | None = None) -> int:
             cfg, "live", display_name, args.db, use_dashboard=not args.no_dashboard, lan=args.lan
         )
         stage = None if args.no_classifier else build_classifier_stage(cfg.classifier)
-        if stage is None and cfg.gate.confirm_with_classifier:
-            print("Gate only: no classifier, so backup alarm alerts are UNVERIFIED.")
+        if stage is None and not cfg.experimental.unverified_gate_only:
+            print("No classifier: BACKUP ALARM cannot show (gate hits need the classifier).")
         metrics = Metrics()
         source = make_audio_source(
             cfg, args.input, parse_device(args.device) if args.device else None, metrics

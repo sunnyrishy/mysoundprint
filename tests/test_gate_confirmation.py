@@ -79,7 +79,7 @@ def alarm_scene(total_s: float = 20.0, alarm: bool = True) -> np.ndarray:
 
 def run(spec, audio=None, confirm=True, profile="home", start=CONTENT_START_CALL, classifier=True):
     cfg = copy.deepcopy(CFG)
-    cfg.gate.confirm_with_classifier = confirm
+    cfg.experimental.unverified_gate_only = not confirm  # explicit opt-in (D63)
     audio = alarm_scene() if audio is None else audio
     store = ProfileStore.from_config(cfg)
     store.set_active(profile)
@@ -103,18 +103,52 @@ def test_the_old_behaviour_is_still_there_when_confirmation_is_off() -> None:
     assert m.gate_candidates == 0  # candidates only exist in confirmation mode
 
 
-def test_gate_only_runs_without_a_classifier_stay_unverified_and_say_so(caplog) -> None:
+def test_without_a_classifier_a_gate_hit_never_shows_backup_alarm(caplog) -> None:
+    """D63: the gate-only fallback is not approved. No classifier means nothing can confirm."""
     with caplog.at_level(logging.WARNING, logger="sentinel.pipeline"):
-        shown, _, _ = run({}, classifier=False)
-    assert shown == ["BACKUP ALARM"]  # nothing to confirm with, so the old behaviour
-    assert any("UNVERIFIED" in r.message for r in caplog.records)
+        shown, rows, m = run({}, classifier=False)
+    assert shown == [] and rows == []
+    assert m.gate_candidates == 1 and m.gate_confirmed == 0
+    assert any("never be confirmed" in r.message for r in caplog.records)
+
+
+def test_the_experimental_gate_only_switch_is_off_by_default() -> None:
+    assert load_config().experimental.unverified_gate_only is False
+    assert CFG.experimental.unverified_gate_only is False
+
+
+def test_the_experimental_gate_only_mode_labels_every_alert_unverified(caplog) -> None:
+    with caplog.at_level(logging.WARNING, logger="sentinel.pipeline"):
+        shown, _, _ = run({}, confirm=False, classifier=False)
+    assert shown == ["BACKUP ALARM"]
+    assert any("EXPERIMENTAL" in r.message for r in caplog.records)
+    audio_shown = []
+
+    class Cap(Rec):
+        def show(self, alert):
+            audio_shown.append((alert.line1, alert.line2))
+            super().show(alert)
+
+    cfg = copy.deepcopy(CFG)
+    cfg.experimental.unverified_gate_only = True
+    Pipeline(cfg, AudioFileSource(alarm_scene(), t0=0.0), Cap(), eventlog=EventLog(),
+             source_label="synthetic").run_sync()  # fmt: skip
+    assert audio_shown == [("BACKUP ALARM", "UNVERIFIED")]
+
+
+def test_the_switch_does_not_touch_other_sounds_or_normal_runs() -> None:
+    shown, rows, _ = run({BABY: 0.8}, confirm=False)  # a classified sound is not labeled unverified
+    assert "BABY CRY" in shown
+    assert "baby_cry" in [r["alert_class"] for r in rows]
+    normal, normal_rows, _ = run({})
+    assert normal == [] and normal_rows == []
 
 
 # ---- contradiction: the classifier confidently says something else ----
 def test_baby_cry_classified_confidently_suppresses_the_backup_alarm() -> None:
     shown, rows, m = run({BABY: 0.8})
     assert "BACKUP ALARM" not in shown and shown == ["BABY CRY"]  # the real sound is still shown
-    assert [r["alert_class"] for r in rows] == ["baby_cry"]
+    assert "baby_cry" in [r["alert_class"] for r in rows]
     assert m.gate_suppressed >= 1 and m.gate_suppressed == m.gate_candidates  # every pulse
     assert m.gate_confirmed == 0
 

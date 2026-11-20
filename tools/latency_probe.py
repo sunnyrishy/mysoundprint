@@ -133,6 +133,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-device", default=None, help="speaker device for live mode")
     parser.add_argument("--db", default=":memory:", help="event log (default: a throwaway one)")
     parser.add_argument("--no-classifier", action="store_true")
+    parser.add_argument(
+        "--experimental-unverified-gate-only",
+        action="store_true",
+        help="EXPERIMENTAL, off by default: tonal gate hits alert alone, labeled UNVERIFIED. "
+        "Not reliable alarm detection.",
+    )
     args = parser.parse_args(argv)
     if args.interval < 8.0:
         print(
@@ -144,8 +150,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg: SentinelConfig = load_config(args.config)
         # The probe is a synthetic tone used to time the display path. A classifier cannot confirm
-        # it, so the gate must be allowed to alert on its own here. Not a recognition test.
-        cfg.gate.confirm_with_classifier = False
+        # it, so it only works with the explicit experimental switch. Not a recognition test.
+        if not args.experimental_unverified_gate_only:
+            print(
+                "The latency probe plays synthetic tones that the classifier cannot confirm. "
+                "Pass --experimental-unverified-gate-only to run it. Alerts are labeled UNVERIFIED "
+                "and this is a display timing test, not alarm detection.",
+                file=sys.stderr,
+            )
+            return 2
+        cfg.experimental.unverified_gate_only = True
+        print("EXPERIMENTAL: unverified_gate_only is ON (synthetic display timing probe).")
         runtime = start_runtime(
             cfg, "live" if args.mode == "live" else "replay", args.display, args.db
         )

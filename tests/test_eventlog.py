@@ -54,6 +54,7 @@ def test_schema_matches_spec_columns() -> None:
             "config_hash",
             "level",  # added for MySoundprint, see docs/DECISIONS.md
             "profile",
+            "experimental",  # added for Milestone D, see docs/DECISIONS.md D66
         ]
     )
     assert not any("audio" in c or "wav" in c for c in cols)  # metadata only

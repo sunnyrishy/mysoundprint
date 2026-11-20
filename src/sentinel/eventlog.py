@@ -35,24 +35,33 @@ CREATE TABLE IF NOT EXISTS events (
   source TEXT NOT NULL,              -- live | replay | synthetic
   config_hash TEXT NOT NULL,
   level TEXT,                        -- effective level: interrupt | quiet | later (old rows NULL)
-  profile TEXT                       -- active profile at detection (old rows NULL)
+  profile TEXT,                      -- active profile at detection (old rows NULL)
+  experimental INTEGER NOT NULL DEFAULT 0  -- 1 only if made under an experimental config
 );
 """
 
 # Columns added after the first release. Databases created before them are upgraded in place by
 # adding the columns. Old rows keep NULL, so existing history stays readable.
-MIGRATIONS = {"level": "TEXT", "profile": "TEXT"}
+# experimental: old rows get 0. Their provenance is unknown, and they are treated as normal events.
+MIGRATIONS = {"level": "TEXT", "profile": "TEXT", "experimental": "INTEGER NOT NULL DEFAULT 0"}
 
 COLUMNS = [
     "id", "ts_wall", "alert_class", "stage", "score", "confirmed", "cancel_reason", "t_onset",
     "t_detect", "t_display", "processing_ms", "alarm_to_display_ms", "acknowledged", "source",
-    "config_hash", "level", "profile",
+    "config_hash", "level", "profile", "experimental",
 ]  # fmt: skip
 UPDATABLE = {
     "stage", "score", "confirmed", "cancel_reason", "t_display", "processing_ms",
     "alarm_to_display_ms", "acknowledged",
 }  # fmt: skip
 SOURCES = {"live", "replay", "synthetic"}
+
+
+def _public(row: Any) -> dict[str, Any]:
+    """A row as a dict. experimental is a real boolean, the other flags keep their 0 or 1."""
+    out = dict(row)
+    out["experimental"] = bool(out.get("experimental"))
+    return out
 
 
 def utc_now_iso() -> str:
@@ -124,6 +133,7 @@ class EventLog:
         row["ts_wall"] = row["ts_wall"] or utc_now_iso()
         row["confirmed"] = int(bool(row["confirmed"]))
         row["acknowledged"] = int(bool(row["acknowledged"]))
+        row["experimental"] = int(bool(row["experimental"]))  # missing means a normal event
         marks = ", ".join("?" for _ in COLUMNS)
         with self._lock:
             self._conn.execute(
@@ -157,7 +167,7 @@ class EventLog:
     def get(self, event_id: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute("SELECT * FROM events WHERE id = ?", [event_id]).fetchone()
-        return dict(row) if row else None
+        return _public(row) if row else None
 
     def list(
         self, limit: int = 100, offset: int = 0, level: str | None = None
@@ -169,7 +179,7 @@ class EventLog:
                 f"SELECT * FROM events {where}ORDER BY rowid DESC LIMIT ? OFFSET ?",
                 [*args, limit, offset],
             ).fetchall()
-        return [dict(r) for r in rows]
+        return [_public(r) for r in rows]
 
     def count(self) -> int:
         with self._lock:

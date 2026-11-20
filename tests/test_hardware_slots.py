@@ -26,6 +26,9 @@ from sentinel.types import Alert, AlertClass, DisplayCaps
 
 ROOT = Path(__file__).resolve().parents[1]
 CFG = load_config()
+CFG.experimental.unverified_gate_only = (
+    True  # gate-alone tests: explicit opt-in to the experimental switch (D63)
+)
 
 
 def load_tool(name: str):
@@ -230,6 +233,9 @@ def test_replay_with_bridge_display_reaches_echo_subscriber(tmp_path: Path) -> N
     port = free_port()
     raw = copy.deepcopy(yaml.safe_load(DEFAULT_CONFIG_PATH.read_text()))
     raw["dashboard"]["port"] = port
+    raw["experimental"]["unverified_gate_only"] = (
+        True  # gate-alone tests: explicit opt-in to the experimental switch (D63)
+    )
     cfg_path = tmp_path / "cfg.yaml"
     cfg_path.write_text(yaml.safe_dump(raw))
     scenario = tmp_path / "s.yaml"
@@ -281,7 +287,7 @@ def test_replay_with_bridge_display_reaches_echo_subscriber(tmp_path: Path) -> N
         echo.kill()
         t.join(timeout=30)
     assert rc == [0]
-    assert "ALERT e_000001 tier 1" in out and "BACKUP ALARM | NEARBY" in out
+    assert "ALERT e_000001 tier 1" in out and "BACKUP ALARM | UNVERIFIED" in out
 
 
 def test_bridge_echo_rejects_bad_address(capsys) -> None:
@@ -310,7 +316,10 @@ def test_bridge_echo_describe_formats_all_message_types() -> None:
 # ---- latency probe ------------------------------------------------------------------------------
 def test_latency_probe_simulate_prints_timeline(capsys) -> None:
     probe = load_tool("latency_probe")
-    rc = probe.main(["--probes", "1", "--interval", "8", "--display", "console", "--no-classifier"])
+    rc = probe.main(
+        ["--probes", "1", "--interval", "8", "--display", "console", "--no-classifier",
+         "--experimental-unverified-gate-only"]
+    )  # fmt: skip
     out = capsys.readouterr().out
     assert rc == 0
     assert "sound starts" in out and "show returned" in out

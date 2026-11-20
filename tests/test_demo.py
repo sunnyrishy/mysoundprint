@@ -112,14 +112,25 @@ def test_replay_mode_is_labeled_and_works_offline(env, capsys, monkeypatch) -> N
 
     monkeypatch.setattr(socket.socket, "connect", loopback_only)
     t, rc = run_in_thread(
-        demo, base_args(env, "--mode", "replay", "--input", env["scenario"], "--duration", "9")
+        demo,
+        base_args(
+            env,
+            "--mode",
+            "replay",
+            "--input",
+            env["scenario"],
+            "--duration",
+            "9",
+            "--experimental-unverified-gate-only",
+        ),
     )
     base = f"http://127.0.0.1:{env['port']}"
     status = wait_json(f"{base}/api/status")
     assert status["recording_badge"] is True and status["source"] == "synthetic"
     assert status["mode"] == "demo" and "short_demo" in status["input"]
     events = wait_json(f"{base}/api/events", lambda j: len(j) >= 1)
-    assert events[0]["source"] == "synthetic" and events[0]["alert_class"] == "reversing_alarm"
+    assert events[0]["source"] == "synthetic"
+    assert events[0]["alert_class"] == "reversing_alarm"
     page = httpx.get(f"{base}/?kiosk=1").text
     assert "RECORDING" in page and "kiosk" in page
     t.join(timeout=30)
@@ -184,7 +195,8 @@ def test_live_mode_with_a_microphone_is_not_badged_as_recording(env, monkeypatch
     monkeypatch.setattr(
         demo, "make_audio_source", lambda *a, **k: AudioFileSource(rendered.audio, realtime=True)
     )
-    t, rc = run_in_thread(demo, base_args(env, "--mode", "live", "--duration", "8"))
+    t, rc = run_in_thread(demo, base_args(env, "--mode", "live", "--duration", "8",
+                                    "--experimental-unverified-gate-only"))  # fmt: skip
     base = f"http://127.0.0.1:{env['port']}"
     status = wait_json(f"{base}/api/status")
     assert status["source"] == "live" and status["recording_badge"] is False

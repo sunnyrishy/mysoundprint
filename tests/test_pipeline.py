@@ -38,6 +38,7 @@ class RecordingDisplay:
 def cfg_with(tmp_path: Path, **overrides) -> SentinelConfig:
     raw = copy.deepcopy(yaml.safe_load(DEFAULT_CONFIG_PATH.read_text()))
     raw["recording"]["dir"] = str(tmp_path / "rec")
+    raw["experimental"]["unverified_gate_only"] = True  # gate-alone tests: explicit opt-in (D63)
     for key, val in overrides.items():
         raw[key].update(val)
     return config_from_dict(raw)
@@ -49,7 +50,7 @@ def test_sync_replay_shows_alert_and_records_latency(tmp_path: Path) -> None:
     p = Pipeline(cfg_with(tmp_path), AudioFileSource(rendered.audio, t0=0.0), display, metrics)
     p.run_sync()
     assert len(display.shown) == 1
-    assert display.shown[0].line1 == "BACKUP ALARM" and display.shown[0].line2 == "NEARBY"
+    assert display.shown[0].line1 == "BACKUP ALARM" and display.shown[0].line2 == "UNVERIFIED"
     assert display.cleared  # cleared after ttl
     s = metrics.summary()
     assert s["n"] == 1
@@ -253,7 +254,8 @@ def test_run_replay_tool_writes_events_to_sqlite(tmp_path: Path, capsys) -> None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     db = tmp_path / "ev.sqlite"
-    rc = mod.main([str(ROOT / "scenarios" / "tonal_10db.yaml"), "--no-classifier", "--db", str(db)])
+    rc = mod.main([str(ROOT / "scenarios" / "tonal_10db.yaml"), "--no-classifier", "--db", str(db),
+                   "--experimental-unverified-gate-only"])  # fmt: skip
     assert rc == 0
     out = capsys.readouterr().out
     assert "provisional" in out and "CONFIRMED" in out and "1 new event" in out

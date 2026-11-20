@@ -495,7 +495,7 @@ def test_an_old_database_opens_keeps_its_history_and_gains_the_new_columns(tmp_p
     make_old_database(path)
     log = EventLog(path)
     cols = [r[1] for r in log._conn.execute("PRAGMA table_info(events)")]
-    assert cols == COLUMNS and cols[-2:] == ["level", "profile"]
+    assert cols == COLUMNS and cols[-3:] == ["level", "profile", "experimental"]
     old = log.get("e_000007")
     assert (
         old["alert_class"] == "reversing_alarm" and old["level"] is None and old["profile"] is None
@@ -507,7 +507,7 @@ def test_an_old_database_opens_keeps_its_history_and_gains_the_new_columns(tmp_p
     again = EventLog(path)  # a second open must not try to add the columns again
     assert again.count() == 2 and again.get("e_000008")["profile"] == "focus"
     assert again.stats()["events_total"] == 2
-    assert again.to_csv().splitlines()[0].split(",")[-2:] == ["level", "profile"]
+    assert again.to_csv().splitlines()[0].split(",")[-3:] == ["level", "profile", "experimental"]
 
 
 def test_the_level_filter_returns_only_that_level_newest_first() -> None:

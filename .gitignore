@@ -30,3 +30,8 @@ reports/*
 
 # Scenarios generated from your own recordings stay local
 scenarios/generated/
+
+# Milestone C: real recordings and their reports stay local (also covered by data/* and reports/*)
+data/real_audio/
+reports/real_audio/
+reports/hw_proof.json

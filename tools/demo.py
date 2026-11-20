@@ -118,12 +118,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db", default=DEMO_DB, help="event log for this demo")
     parser.add_argument("--keep-log", action="store_true", help="keep events from earlier demos")
     parser.add_argument("--record", action="store_true", help="save raw audio to data/recordings/")
+    parser.add_argument(
+        "--experimental-unverified-gate-only",
+        action="store_true",
+        help="EXPERIMENTAL, off by default: tonal gate hits alert alone, labeled UNVERIFIED. "
+        "Not reliable alarm detection.",
+    )
     parser.add_argument("--duration", type=float, default=None, help="stop after N seconds")
     args = parser.parse_args(argv)
 
     runtime: Runtime | None = None
     try:
         cfg = load_config(args.config)
+        cfg.experimental.unverified_gate_only |= args.experimental_unverified_gate_only
         if args.strict:
             apply_strict(cfg)
         if not args.keep_log and args.db != ":memory:":
@@ -151,16 +158,18 @@ def main(argv: list[str] | None = None) -> int:
                 replay_note = "NOT LIVE: the microphone could not be opened, so this is a replay."
         if mode == "replay":
             audio, desc, label = load_replay_audio(args.input)
-            if label == "synthetic":
-                # A classifier cannot confirm a synthetic tone, so a synthetic replay runs the gate
-                # on its own. It is labeled synthetic and RECORDING on the page and in the log.
-                cfg.gate.confirm_with_classifier = False
             source = LoopingSource(audio, cfg.audio.frame_ms)
             replay_note = (
                 replay_note or "RECORDING: replaying audio. This is not the live microphone."
             )
             if label == "synthetic":
-                replay_note += " Synthetic tones: gate hits are NOT confirmed by the classifier."
+                replay_note += (
+                    " EXPERIMENTAL UNVERIFIED gate alerts are ON."
+                    if cfg.experimental.unverified_gate_only
+                    else " Synthetic backup alarm tones are NOT shown: the classifier does not "
+                    "confirm them. Pass --experimental-unverified-gate-only to see UNVERIFIED gate "
+                    "alerts."
+                )
         else:
             desc = "live microphone"
 

@@ -15,8 +15,7 @@ gate:
   burst_min_s: 0.25
   burst_max_s: 1.0
   pulse_period_s: [0.6, 1.5]
-  confirm_timeout_s: 1.6    # a gate candidate waits this long for the classifier to confirm it
-  confirm_with_classifier: true   # a gate hit alone never shows BACKUP ALARM when a classifier runs
+  confirm_timeout_s: 1.6    # a gate candidate waits this long for the classifier to confirm it (D60)
 classifier:
   enabled: true
   model_path: models/yamnet_classification.tflite   # final name set by fetch_models.py
@@ -179,3 +178,5 @@ eventlog:
 recording:
   enabled: false            # only true with the --record flag
   dir: data/recordings
+experimental:               # TEST ONLY, all off. Not reliable alarm detection (D63).
+  unverified_gate_only: false   # true: a gate hit alerts alone, labeled UNVERIFIED

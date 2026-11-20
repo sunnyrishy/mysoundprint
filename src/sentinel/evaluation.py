@@ -624,7 +624,7 @@ def render_report(
         "as fast as possible on one thread. It is an estimate of load at real time, not a "
         "measurement on the target device.",
     ]
-    if classifier_used and cfg.gate.confirm_with_classifier:
+    if classifier_used and not cfg.experimental.unverified_gate_only:
         notes.append(
             "Gate hits need classifier confirmation (D60). The classifier does not recognise "
             "synthetic tones as reversing beeps, so synthetic reversing alarm recall is expected "

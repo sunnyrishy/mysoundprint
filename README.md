@@ -215,7 +215,7 @@ Try it without any hardware:
 
 ```bash
 python tools/run_replay.py scenarios/tonal_10db.yaml          # synthetic alarm through the pipeline
-python tools/demo.py --mode replay                            # labeled replay with dashboard and kiosk page
+python tools/demo.py --mode replay                            # labeled replay with dashboard and kiosk page (a synthetic backup alarm shows nothing: see below)
 ```
 
 With a microphone:
@@ -236,7 +236,13 @@ The phone page switches between the four profiles and sets a level for each soun
 
 Open the printed `http://<laptop-ip>:8765/phone` on the phone. The dashboard is at `http://127.0.0.1:8765/`, and kiosk mode at `/?kiosk=1`.
 
-Other tools: `tools/evaluate.py`, `tools/make_test_set.py`, `tools/latency_probe.py`, `tools/hw_smoke_test.py` and `tools/bridge_echo.py`. Each has `--help`.
+Tonal gate hits are only candidates and need the classifier (D60). A synthetic tone is not recognized by the classifier, so the stock replay shows no BACKUP ALARM. To see the gate alone, pass `--experimental-unverified-gate-only` to the demo, replay or live tools. Those alerts say UNVERIFIED, the switch is off by default and it is not reliable alarm detection (D63).
+
+Demo: `docs/DEMO_RUNBOOK.md`. What is and is not verified: `docs/DEMO_EVIDENCE_AND_LIMITATIONS.md`.
+
+Real recordings: follow `docs/REAL_AUDIO_RECORDING_GUIDE.md`, put them in `data/real_audio/` with a `manifest.csv` (give each independent source a `source_id`) and run `python tools/eval_real.py`. Acceptance statuses are `NOT_EVALUATED`, `INDICATIVE`, `MET` (positives) and `NOT_MET` for negatives with false alerts. See `docs/REAL_AUDIO_EVAL.md`. No real recording has been evaluated yet. Glasses: `docs/M6_INTEGRATION_PLAN.md` and `python tools/hw_proof.py` (add `--extended` and `--manual` for the extra cases, or run only the first physical test, HELLO then DOORBELL then clear, with `--first-test`). Check the demo laptop with `python tools/preflight.py --self-test`. Events made under an experimental switch carry `experimental: true` (D66). No M6 adapter exists and nothing has run on the glasses.
+
+Other tools: `tools/evaluate.py`, `tools/eval_real.py`, `tools/hw_proof.py`, `tools/make_test_set.py`, `tools/latency_probe.py`, `tools/hw_smoke_test.py` and `tools/bridge_echo.py`. Each has `--help`.
 
 ## 8. Repository layout
 

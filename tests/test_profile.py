@@ -20,6 +20,9 @@ from sentinel.sim import synth
 from sentinel.types import SAMPLE_RATE, Alert, AlertClass, DisplayCaps
 
 CFG = load_config()
+CFG.experimental.unverified_gate_only = (
+    True  # gate-alone tests: explicit opt-in to the experimental switch (D63)
+)
 R = AlertClass.REVERSING_ALARM
 
 

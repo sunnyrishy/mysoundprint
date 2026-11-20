@@ -66,10 +66,6 @@ class GateConfig(_Strict):
     burst_max_s: float = Field(1.0, gt=0)
     pulse_period_s: tuple[float, float] = (0.6, 1.5)
     confirm_timeout_s: float = Field(1.6, gt=0)
-    # A gate hit is only a candidate. It may show BACKUP ALARM only after the classifier gives
-    # positive evidence for reversing beeps and does not contradict it. Gate-only runs (no
-    # classifier) keep the old behavior, because there is nothing to confirm with. See D60.
-    confirm_with_classifier: bool = True
 
     @model_validator(mode="after")
     def _check_ranges(self) -> GateConfig:
@@ -253,6 +249,16 @@ class RecordingConfig(_Strict):
     dir: str = "data/recordings"
 
 
+class ExperimentalConfig(_Strict):
+    """Test-only switches. Everything here is off by default and kept out of the normal sections.
+    Nothing in this block is reliable alarm detection. See docs/DECISIONS.md D63."""
+
+    # A tonal gate hit alerts on its own, labeled UNVERIFIED, with no classifier confirmation. Used
+    # to time the display path with synthetic tones and for gate-only experiments. Never enable it
+    # for a real demo.
+    unverified_gate_only: bool = False
+
+
 class SentinelConfig(_Strict):
     audio: AudioConfig = AudioConfig()
     buffer: BufferConfig = BufferConfig()
@@ -264,6 +270,7 @@ class SentinelConfig(_Strict):
     dashboard: DashboardConfig = DashboardConfig()
     eventlog: EventLogConfig = EventLogConfig()
     recording: RecordingConfig = RecordingConfig()
+    experimental: ExperimentalConfig = ExperimentalConfig()
 
     def config_hash(self) -> str:
         """Stable short hash of the active config, stored in every event."""

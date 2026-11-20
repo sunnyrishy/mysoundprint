@@ -56,6 +56,14 @@ Fill this in at the 7:35 PM walkthrough and in the first 90 minutes. Every fact 
 
 If the SDK blocks us, ask the hardware team immediately. Do not spend the night on the simulator, because the event rules make "Works on the glasses" the one criterion that can disqualify a team.
 
+## Status check, Milestone F
+
+No SDK documentation, sample app or verified API example is in this repository or was supplied. Every "Answers" section above is still `_unknown_`. The MicroLumin adapter stays a stub and no hardware proof has been run on glasses.
+
+## Readiness audit
+
+`docs/M6_INTEGRATION_PLAN.md` lists where the display adapter lives, the exact call path, what an adapter must do, and every unknown. The first hardware proof is scripted in `tools/hw_proof.py` (show, replace, 20 updates, clear). It logs call times and leaves the "observed on lens" cells for a human to fill from video.
+
 ## Integration slots
 
 Every unknown has a slot, a safe default and a place to record the answer.
@@ -135,7 +143,7 @@ Decision so far: A. Record any change in `docs/DECISIONS.md`.
 ## How to try the bridge today (no hardware)
 
 ```bash
-python tools/run_replay.py scenarios/tonal_10db.yaml --display bridge --realtime --no-classifier
+python tools/run_replay.py scenarios/tonal_10db.yaml --display bridge --realtime --no-classifier --experimental-unverified-gate-only
 python tools/bridge_echo.py          # in a second terminal
 ```
 
