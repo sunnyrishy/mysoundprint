@@ -48,6 +48,7 @@ MySoundprint is an assistive awareness prototype. It is not a certified safety d
 | Disconnect and reconnect | `--manual`, video | **NOT PERFORMED** |
 | Device acknowledgement | SDK documentation | **UNKNOWN**, `device_ack` stays `UNKNOWN` |
 | End-to-end MySoundprint alert on the glasses (a normal, classifier-confirmed sound with the default configuration shown on the lens) | video of sound, detection and lens | **NOT PERFORMED** |
+| Glasses-side client (`glasses_client/`, plain Android app over `adb reverse`) installed and showing text | `adb install`, video of the lens | **NOT PERFORMED.** Compiles and 8 JVM unit tests pass in a sandbox. Never run on glasses |
 | Phone-side forwarding, if the SDK requires a phone | five conditions in `docs/M6_INTEGRATION_PLAN.md`, then a working forwarder | **NOT NEEDED OR BUILT YET**, conditions unestablished |
 | Actual demo laptop and phone checks (microphone, network, firewall, vibration, restart) | `tools/preflight.py` on that laptop plus the manual items | **NOT PERFORMED** |
 | End-to-end latency | whole path timed from video | **NOT MEASURED** |

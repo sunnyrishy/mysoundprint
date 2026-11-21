@@ -8,6 +8,27 @@ Audited at commit `7a30b45` plus the Milestone C changes. Code references are to
 
 SDK documentation, a sample app or verified API examples: **none available**. No M6 adapter was written. The proof in section 5 remains executable against a test adapter (`tools/hw_proof.py` with any `DisplayAdapter`) and is covered by tests on fake lenses only. Physical glasses tests: **not performed**. Missing information needed before an adapter can be written: the SDK form and version, supported connection methods, the show, replace and clear operations, any acknowledgement or completion guarantee, documented text and display limits, and disconnect and reconnect behavior (items 1 to 12 in section 6, all UNKNOWN).
 
+### New facts on Nov 21: the SDK guide is published (see `docs/WORN_EVENT_INFO.md`)
+
+Read from the public site. The kit documents are not read yet. Nothing below has been tried on the glasses.
+
+- The M6 runs **Android 9** with a **640 by 480** display where black is see-through. A **glasses app is a plain Android app** installed over USB with `adb`, "no special SDK needed", which "talks to your phone or laptop over Wi-Fi". The SDK route (phone app over Bluetooth, `ConnectClientProxy.sendMsg` on Android, `MLVisionM6SDKManager` on iOS) also exists.
+- This changes the architecture options. The earlier conditional "phone-side forwarder" assumed the SDK might force a phone in the middle. A documented alternative now exists:
+
+| Option | Path | What it needs | Status |
+|---|---|---|---|
+| **G (glasses-side client)** | laptop pipeline, existing `--display bridge` WebSocket (`alert` and `clear` messages) -> a small plain Android app on the glasses that connects to the laptop over Wi-Fi and draws white text on black | The glasses on a Wi-Fi network the laptop is also on (hotspot), `adb`, Android Studio, JDK 17. Reachable address for the laptop. No SDK | **Not built.** Smallest documented route, and the preferred one to try first. Unknown: how the glasses join Wi-Fi, background behavior, how the app is kept in the foreground and the screen on |
+| P (phone forwarder) | laptop -> bridge -> phone app -> SDK `sendMsg` -> glasses | The SDK kit docs for the message JSON, a real phone, Bluetooth | Not built. Only if G is blocked, and only with the message format read from the kit |
+| S (software only) | browser simulator | nothing | Works today, never claimed as glasses |
+
+- The glasses app would be a thin display client. Rules from the earlier forwarder section apply to it: use only `alert` and `clear` (the hub also sends `event`, `stats`, `profile`, which it must ignore), no raw audio, show means replace, ignore a clear for an event that is not current, never let a late old message win, clear the screen on reconnect. Because the messages carry no sequence number, a single connection and in-order processing are the protection.
+- Constraints from the FAQ: the glasses **stay onsite** in a testing room with staff, so all testing is at the venue; a team is judged at its table, so confirm with staff whether the glasses can be at the table for the demo.
+- Still to read in the kit before writing anything: the Android SDK guide and BTConnect doc (message formats), and whether the glasses can run our own app and keep Wi-Fi alive.
+
+### Option G, glasses client built and unit tested in a sandbox (Nov 21), NOT run on glasses
+
+`glasses_client/` is a complete Gradle project (Kotlin, OkHttp WebSocket) with a prebuilt debug APK and a README. It shows `alert` text on black and clears on `clear`. The glasses are reached from the laptop over the USB cable with `adb reverse tcp:8765 tcp:8765`, which removes the need for Wi-Fi setup (standard adb, unverified on these glasses). `tools/hw_proof.py` can now drive the bridge (`--display bridge --wait-s N`), and a test shows a stand-in WebSocket client receives HELLO, DOORBELL and a clear. That proves the laptop side only. It compiles and its 8 message-rule unit tests pass (Android SDK 34, Gradle 8.7). Nothing is claimed about the lens until a person sees it. The glasses' Developer Mode, needed for `adb`, is turned on from the vendor's iPhone demo app per the organizers' kit, so a Mac and iPhone (or another way the kit documents) are required for that one step.
+
 ### Status at Milestone J (Nov 20)
 
 Rechecked: still no SDK documentation, sample app or API example in the repository or on this machine, no glasses, no computer attached to the session. The adapter is still a stub, `device_ack` is `UNKNOWN`, no physical test and no phone-side forwarder exists. The conditional forwarder below stays unbuilt until its five conditions are established and a background-restriction question is answered: whether the SDK connection stays alive on the phone while it receives WebSocket messages (for example when the screen is off or the app is in the background). Record that answer in `docs/SDK_NOTES.md`. If the SDK, the phone or the connection fails any condition, the honest alternatives, in order, are: an official phone app demonstration (clearly not MySoundprint integration), the laptop software demonstration with the adapter boundary explained, and the software-only fallback.

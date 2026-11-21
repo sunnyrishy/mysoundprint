@@ -40,6 +40,7 @@ from typing import Any
 from sentinel.adapters import make_display
 from sentinel.adapters.base import AsyncDisplay, fit_lines
 from sentinel.config import ConfigError, load_config
+from sentinel.runtime import start_runtime
 from sentinel.types import Alert, AlertClass, DisplayAdapter
 
 DEVICE_ACK = "UNKNOWN"  # no SDK is known and the adapter protocol returns nothing from the device
@@ -454,18 +455,39 @@ def main(argv: list[str] | None = None) -> int:
         "--first-test", action="store_true",
         help="only the first physical test: HELLO, replace with DOORBELL, clear",
     )  # fmt: skip
+    parser.add_argument(
+        "--wait-s", type=float, default=0.0,
+        help="bridge or sim only: seconds to wait after starting, so a glasses client can connect",
+    )  # fmt: skip
     args = parser.parse_args(argv)
     name = args.display or "(config)"
+    runtime = None
     try:
         cfg = load_config(args.config)
         name = args.display or cfg.display.adapter
-        display = make_display(cfg, name)
+        if "bridge" in name or "sim" in name:  # these publish over the dashboard WebSocket
+            runtime = start_runtime(cfg, "live", name)
+            display = runtime.display
+            print(f"WebSocket for a display client: ws://127.0.0.1:{cfg.dashboard.port}/ws")
+            if args.wait_s > 0:
+                print(f"Waiting {args.wait_s:.0f} s for a client to connect...")
+                time.sleep(args.wait_s)
+        else:
+            display = make_display(cfg, name)
     except NotImplementedError as err:
         print(f"SKIPPED: display adapter '{name}' is not implemented.\n{err}")
         return 0
     except (ConfigError, RuntimeError) as err:
         print(err, file=sys.stderr)
         return 2
+    try:
+        return _run_selected(args, display)
+    finally:
+        if runtime:
+            runtime.close()
+
+
+def _run_selected(args: argparse.Namespace, display: DisplayAdapter) -> int:
     if args.first_test:
         log = run_first_test(display, args.hold_s)
         display.close()

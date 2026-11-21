@@ -259,3 +259,73 @@ def test_message_limits_stay_assumed_unless_the_human_says_they_are_documented()
 
     assert "caps_documented" in inspect.signature(proof.run_extended).parameters
     assert "--caps-documented" in inspect.getsource(proof.main)
+
+
+# ---- Milestone K: the first test through the real WebSocket bridge ----
+def test_first_test_over_the_bridge_reaches_a_websocket_display_client(tmp_path) -> None:
+    """A stand-in for the glasses client: it receives HELLO, DOORBELL, then a clear. This proves the
+    laptop side only. It does not prove anything on a lens."""
+    import copy
+    import json
+    import socket
+    import threading
+
+    import yaml
+    from websockets.sync.client import connect
+
+    from sentinel.config import DEFAULT_CONFIG_PATH
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    raw = copy.deepcopy(yaml.safe_load(DEFAULT_CONFIG_PATH.read_text()))
+    raw["dashboard"]["port"] = port
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text(yaml.safe_dump(raw))
+    rc: list[int] = []
+    t = threading.Thread(
+        target=lambda: rc.append(
+            proof.main(
+                [
+                    "--config",
+                    str(cfg_path),
+                    "--display",
+                    "bridge",
+                    "--first-test",
+                    "--wait-s",
+                    "2",
+                    "--hold-s",
+                    "0.3",
+                    "--log",
+                    str(tmp_path / "f.json"),
+                ]
+            )
+        )
+    )
+    t.start()
+    got: list[dict] = []
+    deadline = time.time() + 15
+    ws = None
+    while ws is None and time.time() < deadline:
+        try:
+            ws = connect(f"ws://127.0.0.1:{port}/ws", open_timeout=1)
+        except OSError:
+            time.sleep(0.1)
+    assert ws is not None
+    with ws:
+        while time.time() < deadline and not (got and got[-1].get("type") == "clear"):
+            try:
+                msg = json.loads(ws.recv(timeout=3))
+            except TimeoutError:
+                break
+            if msg.get("type") in ("alert", "clear"):
+                got.append(msg)
+    t.join(timeout=20)
+    assert rc == [0]
+    assert [(m["type"], m.get("line1")) for m in got] == [
+        ("alert", "HELLO"),
+        ("alert", "DOORBELL"),
+        ("clear", None),
+    ]
+    assert got[1]["event_id"] == got[2]["event_id"] and got[0]["event_id"] != got[1]["event_id"]
+    assert all("audio" not in m for m in got)  # only alert and clear information

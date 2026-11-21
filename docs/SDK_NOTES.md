@@ -2,6 +2,23 @@
 
 **Status: nothing here is confirmed by MicroLumin.** The spec found no public MicroLumin SDK. Never invent SDK calls. When real facts arrive, paste them into the "Answers" sections below, and the code changes only in the slot listed for that fact.
 
+## Update 2026-11-21: the organizers published the SDK guide
+
+The official site (https://worn-hacks.com/m6-sdk) describes the kit and the glasses. Everything is recorded, with sources, in `docs/WORN_EVENT_INFO.md`. The kit documents themselves (`01_Start_Here/README.md`, the Android SDK guide, the BTConnect usage doc, the iOS guide) have **not** been read: the kit is confidential, lives on the laptop, and must not enter this repository. Partial answers to the intake checklist below, all from the public site and not yet checked on hardware:
+
+| # | Answer so far | Source |
+|---|---|---|
+| 1 | SDK form: an Android Gradle project (`02_Android_SDK/mainapp-main-sdk-oversea`, add your app as a module) and an iOS SDK (`MLVisionM6SDK`, Swift, fork the MLDemo app). Kit: `Microlumin_Ship.zip`, about 719 MB, Google Drive link on the site | worn-hacks.com/m6-sdk |
+| 2 | Text to the display: a **plain Android app on the glasses** (installed with `adb`) draws it, no special SDK. A phone app can also drive the glasses over the SDK. Exact message APIs are in the kit docs: UNKNOWN to us | worn-hacks.com/m6-sdk |
+| 3 | Display 640 by 480, "black is see-through: use a black background and bright text". Characters per line, lines, update rate, color, blink, brightness: UNKNOWN. The earlier 2 x 12 mono green assumption is **not** documented | worn-hacks.com/m6-sdk |
+| 4 | A phone is needed for the SDK route: "needs a real phone with Bluetooth", simulator and emulators do not work. iOS: Mac, Xcode 26.5, iPhone iOS 15 or later. Android: Android Studio, JDK 17 or later, an Android phone. A glasses app does not need the SDK | worn-hacks.com/m6-sdk |
+| 5 | Laptop to glasses directly: a glasses app can "talk to your phone or laptop over Wi-Fi". Whether the glasses can join an arbitrary Wi-Fi network or hotspot: UNKNOWN | worn-hacks.com/m6-sdk |
+| 6 | Glasses microphone access: UNKNOWN. Bluetooth carries "control, audio" | worn-hacks.com/m6-sdk |
+| 7, 8 | Own microphone and speaker, pre-built code and models: not stated on the site. Existing projects are allowed with disclosure of prior work. MicroLumin gets a license to submitted code | worn-hacks.com FAQ |
+| 9 | Delay from our call to text: UNKNOWN | |
+
+Other facts: glasses are Android 9; Bluetooth is for control and audio, Wi-Fi for media files; the glasses stay onsite in a testing room with staff; Dean (MicroLumin) answers in `#ask-for-help` on the Worn Discord.
+
 ## Facts seeded from public reviews (all UNCONFIRMED)
 
 These come from Chinese-language press and reviews of the MLVISION M6 series (Tencent News, Sohu, OFweek, Jiemian). The spec rates them low to medium confidence. Replace each row with the confirmed answer.
