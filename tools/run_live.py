@@ -42,9 +42,8 @@ def make_trace_printer():
             if name == last["cls"] and e["t"] - last["t"] < 1.0:
                 return
             last["cls"], last["t"] = name, e["t"]
-            print(
-                f"  heard: {name} {score:.2f}  (reversing beeps score {e.get('reversing_score', 0.0):.2f})"
-            )
+            rev = e.get("reversing_score", 0.0)
+            print(f"  heard: {name} {score:.2f}  (reversing beeps score {rev:.2f})")
         elif kind in ("candidate", "suppressed", "unconfirmed", "confirmed"):
             print(f"  tonal gate candidate: {kind}")
 
