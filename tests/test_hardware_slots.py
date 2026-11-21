@@ -338,3 +338,24 @@ def test_probe_audio_schedule() -> None:
     probe = load_tool("latency_probe")
     audio, onsets = probe.probe_audio(3, 10.0)
     assert onsets == [1.0, 11.0, 21.0] and len(audio) > 24 * 16000
+
+
+def test_run_live_trace_printer_shows_what_the_classifier_hears(capsys) -> None:
+    live = load_tool("run_live")
+    show = live.make_trace_printer()
+    show({"kind": "observation", "t": 1.0, "top_class": "Speech", "top_score": 0.05})  # too quiet
+    show({"kind": "observation", "t": 2.0, "top_class": "Doorbell", "top_score": 0.61,
+          "reversing_score": 0.02})  # fmt: skip
+    show(
+        {
+            "kind": "observation",
+            "t": 2.3,
+            "top_class": "Doorbell",
+            "top_score": 0.62,
+            "reversing_score": 0.02,
+        }
+    )  # fmt: skip  (same class within 1 s: thinned out)
+    show({"kind": "suppressed", "t": 3.0})
+    out = capsys.readouterr().out
+    assert out.count("heard: Doorbell") == 1 and "Speech" not in out
+    assert "tonal gate candidate: suppressed" in out

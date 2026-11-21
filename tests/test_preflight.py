@@ -94,3 +94,13 @@ def test_main_exit_code_follows_failures_and_it_never_claims_glasses_work(tmp_pa
     out = capsys.readouterr().out
     assert "does not prove anything works on physical glasses" in out
     assert rc in (0, 1)
+
+
+def test_a_broken_self_test_is_reported_as_a_failure_not_a_crash(tmp_path, monkeypatch) -> None:
+    def boom(cfg):
+        raise RuntimeError("needs the httpx2 package")
+
+    monkeypatch.setattr(pre, "self_test", boom)
+    got = run(tmp_path, with_self_test=True)
+    assert got["in-process self-test"].status == "FAIL"
+    assert "httpx2" in got["in-process self-test"].detail

@@ -164,7 +164,10 @@ def run_checks(
     except OSError as err:
         out.append(Check("data folder is writable", "FAIL", str(err)))
     if with_self_test:
-        out += self_test(cfg)
+        try:
+            out += self_test(cfg)
+        except Exception as err:  # for example the test client library is missing
+            out.append(Check("in-process self-test", "FAIL", f"{type(err).__name__}: {err}"))
     out += [Check(n, "MANUAL", d) for n, d in MANUAL]
     return out
 

@@ -28,6 +28,29 @@ def parse_device(value: str | None) -> str | int | None:
     return int(value) if value.isdigit() else value
 
 
+def make_trace_printer():
+    """Prints what the classifier hears, for finding a sound it recognizes. Read only: it never
+    changes a decision. Quiet windows are skipped and repeats are thinned out."""
+    last = {"cls": None, "t": -10.0}
+
+    def show(e: dict) -> None:
+        kind = e["kind"]
+        if kind == "observation":
+            score, name = e.get("top_score") or 0.0, e.get("top_class") or "?"
+            if score < 0.20:
+                return
+            if name == last["cls"] and e["t"] - last["t"] < 1.0:
+                return
+            last["cls"], last["t"] = name, e["t"]
+            print(
+                f"  heard: {name} {score:.2f}  (reversing beeps score {e.get('reversing_score', 0.0):.2f})"
+            )
+        elif kind in ("candidate", "suppressed", "unconfirmed", "confirmed"):
+            print(f"  tonal gate candidate: {kind}")
+
+    return show
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", default=None)
@@ -55,6 +78,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--duration", type=float, default=None, help="stop after N seconds")
     parser.add_argument("--no-classifier", action="store_true", help="gate only, no model needed")
     parser.add_argument("--list-devices", action="store_true")
+    parser.add_argument(
+        "--show-classifier",
+        action="store_true",
+        help="diagnostic: print what the classifier hears (top class and score) and what happens "
+        "to tonal gate candidates. Changes nothing about what is shown",
+    )
     parser.add_argument(
         "--experimental-unverified-gate-only",
         action="store_true",
@@ -107,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         classifier=stage,
         eventlog=runtime.eventlog,
         source_label="live",
+        on_trace=make_trace_printer() if args.show_classifier else None,
     )
     runtime.attach(pipeline)
     if threading.current_thread() is threading.main_thread():  # signals need the main thread
